@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Matrix-New",
-    "slug": "Matrix-New",
-    "version": "1.0.0",
+    "name": "Matrix",
+    "slug": "Matrix",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,10 +10,11 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#07C416"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,10 +22,21 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.princetechtune.Matrix",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e9afd59e-b3ed-4a57-a242-704fa6ce8ead"
+      }
     }
   }
 }

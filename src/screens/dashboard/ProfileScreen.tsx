@@ -1,0 +1,825 @@
+﻿// src/screens/dashboard/ProfileScreen.tsx
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  Text,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  Modal,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../contexts/ThemeContext';
+import { useSession } from '../../contexts/SessionContext';
+import { apiClient } from '../../services/apiClient';
+import ThemeToggle from '../../components/ThemeToggle';
+import { useNavigation } from '@react-navigation/native';
+
+interface ProfileData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  avatar?: string;
+  kycStatus: 'not_started' | 'pending' | 'verified' | 'rejected';
+  accountBalance: number;
+  totalTransactions: number;
+  referralCode: string;
+}
+
+const ProfileScreen: React.FC = () => {
+  const { theme, isDark } = useTheme();
+  const { signOut, session } = useSession();
+  const navigation = useNavigation<any>();
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const fetchProfileData = async () => {
+    try {
+      // Use session user data combined with real API data
+      if (session.user) {
+        // Fetch real profile data from API
+        const profileResponse = await apiClient.get('/user/profile');
+        const user = profileResponse.success ? (profileResponse.data as any).user : session.user;
+
+        const profileData: ProfileData = {
+          id: user.id,
+          firstName: user.first_name || user.full_name?.split(' ')[0] || 'User',
+          lastName: user.last_name || user.full_name?.split(' ')[1] || '',
+          email: user.email,
+          phone: user.mobile || user.phone || '+234 810 981 6653',
+          avatar: user.photo_url || user.avatar_url || undefined,
+          kycStatus: user.kyc_verified ? 'verified' : 'pending',
+          accountBalance: parseFloat(user.wallet_balance || 0),
+          totalTransactions: 24, // This would come from a separate API call
+          referralCode: 'PROSPER2024',
+        };
+        setProfileData(profileData);
+      }
+    } catch (err) {
+      console.error('Profile fetch error:', err);
+      // Fallback to session data if API fails
+      if (session.user) {
+        const fallbackData: ProfileData = {
+          id: session.user.id,
+          firstName: session.user.full_name?.split(' ')[0] || 'User',
+          lastName: session.user.full_name?.split(' ')[1] || '',
+          email: session.user.email,
+          phone: session.user.phone || '+234 810 981 6653',
+          avatar: session.user.avatar_url || undefined,
+          kycStatus: (session.user as any).kyc_verified ? 'verified' : 'pending',
+          accountBalance: parseFloat((session.user as any).wallet_balance || 0),
+          totalTransactions: 24,
+          referralCode: 'PROSPER2024',
+        };
+        setProfileData(fallbackData);
+      }
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfileData();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchProfileData();
+  };
+
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    try {
+      await signOut();
+      navigation.navigate('AuthChoice');
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout. Please try again.');
+    }
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutModal(false);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency: 'NGN',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const getKYCStatusColor = (status: string) => {
+    switch (status) {
+      case 'verified':
+        return '#047603';
+      case 'pending':
+        return '#f59e0b';
+      case 'rejected':
+        return '#ef4444';
+      default:
+        return theme.textSecondary;
+    }
+  };
+
+  return (
+    <>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+          />
+        }
+      >
+        {/* Header */}
+        <View
+          style={[
+            styles.header,
+            { backgroundColor: theme.primary, paddingBottom: 30 },
+          ]}
+        >
+          <View style={styles.headerTop}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.greeting}>Profile</Text>
+              <Text style={styles.subGreeting}>
+                Manage your account settings
+              </Text>
+            </View>
+            <ThemeToggle />
+          </View>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+          </View>
+        ) : (
+          <View style={{ flex: 1, paddingHorizontal: 16 }}>
+            {profileData && (
+              <>
+                {/* Profile Header */}
+                <View
+                  style={[
+                    styles.profileCard,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.avatarContainer}>
+                    {profileData.avatar ? (
+                      <Image
+                        source={{ uri: profileData.avatar }}
+                        style={styles.avatar}
+                        onError={() => {
+                          // Fallback to placeholder if image fails to load
+                          setProfileData(prev => prev ? { ...prev, avatar: undefined } : null);
+                        }}
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.avatarPlaceholder,
+                          { backgroundColor: theme.primary },
+                        ]}
+                      >
+                        <Text style={styles.avatarText}>
+                          {profileData.firstName[0]}
+                          {profileData.lastName[0]}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.profileInfo}>
+                    <Text style={[styles.fullName, { color: theme.text }]}>
+                      {profileData.firstName} {profileData.lastName}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.email,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {profileData.email}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.phone,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {profileData.phone}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* KYC Status */}
+                <View style={styles.section}>
+                  <Text
+                    style={[styles.sectionTitle, { color: theme.text }]}
+                  >
+                    Verification Status
+                  </Text>
+                  <View
+                    style={[
+                      styles.kycCard,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.kycContent}>
+                      <Ionicons
+                        name={
+                          profileData.kycStatus === 'verified'
+                            ? 'checkmark-circle'
+                            : 'alert-circle'
+                        }
+                        size={24}
+                        color={getKYCStatusColor(
+                          profileData.kycStatus
+                        )}
+                      />
+                      <View style={styles.kycInfo}>
+                        <Text
+                          style={[
+                            styles.kycLabel,
+                            { color: theme.text },
+                          ]}
+                        >
+                          KYC Status
+                        </Text>
+                        <Text
+                          style={[
+                            styles.kycStatus,
+                            {
+                              color: getKYCStatusColor(
+                                profileData.kycStatus
+                              ),
+                            },
+                          ]}
+                        >
+                          {profileData.kycStatus
+                            .charAt(0)
+                            .toUpperCase() +
+                            profileData.kycStatus.slice(1)}
+                        </Text>
+                      </View>
+                    </View>
+                    {profileData.kycStatus !== 'verified' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.kycButton,
+                          { backgroundColor: theme.primary },
+                        ]}
+                        onPress={() => navigation.navigate('KYC')}
+                      >
+                        <Text style={styles.kycButtonText}>
+                          Complete KYC
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                {/* Account Info */}
+                <View style={styles.section}>
+                  <Text
+                    style={[styles.sectionTitle, { color: theme.text }]}
+                  >
+                    Account Information
+                  </Text>
+                  <View
+                    style={[
+                      styles.infoCard,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.infoRow}>
+                      <Text
+                        style={[
+                          styles.infoLabel,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        Phone
+                      </Text>
+                      <Text
+                        style={[styles.infoValue, { color: theme.text }]}>
+                        {profileData.phone}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.divider,
+                        { backgroundColor: theme.border },
+                      ]}
+                    />
+                    <View style={styles.infoRow}>
+                      <Text
+                        style={[
+                          styles.infoLabel,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        Account Balance
+                      </Text>
+                      <Text
+                        style={[styles.infoValue, { color: theme.primary }]}>
+                        {formatCurrency(profileData.accountBalance)}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.divider,
+                        { backgroundColor: theme.border },
+                      ]}
+                    />
+                    <View style={styles.infoRow}>
+                      <Text
+                        style={[
+                          styles.infoLabel,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        Total Transactions
+                      </Text>
+                      <Text
+                        style={[styles.infoValue, { color: theme.text }]}>
+                        {profileData.totalTransactions}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Referral Code */}
+                {profileData.referralCode && (
+                  <View style={styles.section}>
+                    <TouchableOpacity
+                      style={[
+                        styles.menuItem,
+                        {
+                          backgroundColor: theme.surface,
+                          borderColor: theme.border,
+                        },
+                      ]}
+                      onPress={() => navigation.navigate('Referrals')}
+                    >
+                      <View style={styles.menuContent}>
+                        <Ionicons
+                          name="people"
+                          size={20}
+                          color={theme.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.menuText,
+                            { color: theme.text },
+                          ]}
+                        >
+                          Referrals
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color={theme.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Settings & Logout */}
+                <View style={styles.section}>
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    onPress={() => navigation.navigate('Settings')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons
+                        name="settings"
+                        size={20}
+                        color={theme.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.menuText,
+                          { color: theme.text },
+                        ]}
+                      >
+                        Settings
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    onPress={() => navigation.navigate('Support')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons
+                        name="help-circle"
+                        size={20}
+                        color={theme.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.menuText,
+                          { color: theme.text },
+                        ]}
+                      >
+                        Help & Support
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      styles.logoutItem,
+                      { borderColor: '#ef4444' },
+                    ]}
+                    onPress={handleLogout}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons
+                        name="log-out"
+                        size={20}
+                        color="#ef4444"
+                      />
+                      <Text
+                        style={[
+                          styles.menuText,
+                          { color: '#ef4444' },
+                        ]}
+                      >
+                        Logout
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ height: 120 }} />
+              </>
+            )}
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Logout Confirmation Modal */}
+      <Modal
+        visible={showLogoutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelLogout}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: theme.surface },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Ionicons
+                name="log-out"
+                size={48}
+                color="#ef4444"
+                style={styles.modalIcon}
+              />
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                Confirm Logout
+              </Text>
+              <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>
+                Are you sure you want to logout? You'll need to sign in again to access your account.
+              </Text>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.cancelButton,
+                  { borderColor: theme.border },
+                ]}
+                onPress={cancelLogout}
+              >
+                <Text style={[styles.cancelButtonText, { color: theme.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.logoutButton]}
+                onPress={confirmLogout}
+              >
+                <Text style={styles.logoutButtonText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
+
+const styles = StyleSheet.create({
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingTop: 60,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  greeting: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  subGreeting: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileCard: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: -10,
+    marginBottom: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  avatarContainer: {
+    marginRight: 16,
+  },
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  avatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  fullName: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  email: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  phone: {
+    fontSize: 12,
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    flex: 1,
+  },
+  kycCard: {
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+  },
+  kycContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  kycInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  kycLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  kycStatus: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  kycButton: {
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  kycButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  infoCard: {
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  infoLabel: {
+    fontSize: 13,
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  divider: {
+    height: 1,
+  },
+  referralCard: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  referralContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  referralCode: {
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logoutItem: {
+    backgroundColor: '#ef444410',
+  },
+  menuContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  menuText: {
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalContent: {
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalIcon: {
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  logoutButton: {
+    backgroundColor: '#ef4444',
+  },
+  logoutButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+
+export default ProfileScreen;

@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../matrix-app"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../ck"
+		}
+	],
+	"settings": {}
+}

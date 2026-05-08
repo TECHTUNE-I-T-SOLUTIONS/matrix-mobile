@@ -59,14 +59,34 @@ class ApiClient {
         ...options,
       });
 
-      const data = await response.json();
+      // Inspect content-type to avoid JSON parse errors when server redirects to HTML
+      const contentType = response.headers.get('content-type') || '';
+      let data: any = null;
+
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        // Non-JSON response (HTML or plain text) — capture text for diagnostics
+        data = await response.text();
+      }
 
       if (!response.ok) {
-        // Try to extract meaningful error message from common response shapes
+        // If unauthorized, clear local session and mark resume auth required
+        if (response.status === 401) {
+          try {
+            await AsyncStorage.removeItem('session')
+            await AsyncStorage.setItem('requiresResumeAuth', 'true')
+          } catch (e) {
+            console.error('Failed to clear session after 401:', e)
+          }
+          return { success: false, error: 'Unauthorized', data };
+        }
+
         const serverError =
           (data && (data.error || data.message)) ||
           (data && data.details && (data.details.message || String(data.details))) ||
-          `HTTP ${response.status}`;
+          // If data is HTML/text fallback to raw text
+          (typeof data === 'string' ? data.substr(0, 500) : `HTTP ${response.status}`);
 
         return {
           success: false,

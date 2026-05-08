@@ -19,6 +19,7 @@ import { useNavigation } from '@react-navigation/native';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
 import { SkeletonCard } from '../../components/SkeletonLoader';
+import AnnouncementsBanner from '../../components/AnnouncementsBanner';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 48) / 2;
@@ -170,7 +171,7 @@ const DashboardScreen: React.FC = () => {
   };
 
   const getTransactionColor = (type: string) => {
-    return type === 'credit' ? '#047603' : '#ef4444';
+    return type === 'credit' ? '#047603' : type === 'wallet_funding' ? '#047603' : type === 'debit' ? '#ef4444' : '#ef4444';
   };
 
   const quickActions = [
@@ -285,6 +286,9 @@ const DashboardScreen: React.FC = () => {
         ) : (
           <View style={{ flex: 1, paddingHorizontal: 16 }}>
             {/* Balance Card */}
+            {/* Announcements banner */}
+            <AnnouncementsBanner />
+
             <LinearGradient
               colors={[theme.primary, theme.primary + 'DD']}
               style={styles.balanceCard}
@@ -427,7 +431,7 @@ const DashboardScreen: React.FC = () => {
                         },
                       ]}
                     >
-                      {tx.transaction_type === 'credit' ? '+' : '-'}
+                      {tx.transaction_type === 'credit' ? '+' : tx.transaction_type === 'wallet_funding' ? '+' : '-'}
                       {formatCurrency(tx.amount)}
                     </Text>
                   </View>

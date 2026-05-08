@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '../../contexts/SessionContext';
 import CustomAlert from '../../components/CustomAlert';
 import ThemeToggle from '../../components/ThemeToggle';
@@ -80,36 +81,18 @@ const LoginScreen: React.FC = () => {
           type: 'error',
         });
       } else {
-        // Check KYC status after successful login
-        setTimeout(() => {
-          if (session.user?.kyc_required && session.user?.kyc_status !== 'verified') {
-            setAlert({
-              visible: true,
-              title: 'KYC Required',
-              message: 'You need to complete KYC verification to access all features. Would you like to do it now?',
-              type: 'warning',
-              buttons: [
-                {
-                  text: 'Complete KYC',
-                  onPress: () => {
-                    setAlert({ ...alert, visible: false });
-                    navigation.navigate('KYC');
-                  }
-                },
-                {
-                  text: 'Later',
-                  onPress: () => {
-                    setAlert({ ...alert, visible: false });
-                    navigation.navigate('Main');
-                  },
-                  style: 'cancel'
-                },
-              ],
-            });
+        // Decide where to navigate based on KYC and pending KYC data
+        try {
+          const pending = await AsyncStorage.getItem('kycPendingCustomer');
+          if (result.kycRequired || pending) {
+            setAlert({ visible: true, title: 'KYC Required', message: 'Please complete KYC verification to continue.', type: 'warning', buttons: undefined });
+            navigation.navigate('KYC');
           } else {
             navigation.navigate('Main');
           }
-        }, 1000); // Small delay to allow session to update
+        } catch (e) {
+          navigation.navigate('Main');
+        }
       }
     } catch (error) {
       setAlert({

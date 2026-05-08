@@ -15,9 +15,14 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
+import * as Application from 'expo-application'
+import { Linking } from 'react-native'
+import ApkInstaller from '../../components/ApkInstaller'
+import { isAutoCheckEnabled } from '../../hooks/useAutoUpdateCheck'
 import { useSession } from '../../contexts/SessionContext';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
+import CustomAlert from '../../components/CustomAlert';
 import { useNavigation } from '@react-navigation/native';
 
 interface ProfileData {
@@ -41,11 +46,27 @@ const ProfileScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [latestRelease, setLatestRelease] = useState<any>(null)
+  const [proxiedAvatarUri, setProxiedAvatarUri] = useState<string | null>(null)
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
 
   const fetchProfileData = async () => {
     try {
       // Use session user data combined with real API data
       if (session.user) {
+        // fetch user's transactions to determine count (same logic as TransactionsScreen)
+        let totalTx = 0
+        try {
+          const txRes = await apiClient.post('/transactions/all', {})
+          if (txRes && txRes.success && txRes.data) {
+            const list = (txRes.data as any).data?.transactions || []
+            totalTx = Array.isArray(list) ? list.length : 0
+          }
+        } catch (e) {
+          totalTx = 0
+        }
         // Fetch real profile data from API
         const profileResponse = await apiClient.get('/user/profile');
         const user = profileResponse.success ? (profileResponse.data as any).user : session.user;
@@ -59,7 +80,7 @@ const ProfileScreen: React.FC = () => {
           avatar: user.photo_url || user.avatar_url || undefined,
           kycStatus: user.kyc_verified ? 'verified' : 'pending',
           accountBalance: parseFloat(user.wallet_balance || 0),
-          totalTransactions: 24, // This would come from a separate API call
+          totalTransactions: totalTx,
           referralCode: 'PROSPER2024',
         };
         setProfileData(profileData);
@@ -77,7 +98,7 @@ const ProfileScreen: React.FC = () => {
           avatar: session.user.avatar_url || undefined,
           kycStatus: (session.user as any).kyc_verified ? 'verified' : 'pending',
           accountBalance: parseFloat((session.user as any).wallet_balance || 0),
-          totalTransactions: 24,
+          totalTransactions: 0,
           referralCode: 'PROSPER2024',
         };
         setProfileData(fallbackData);
@@ -90,7 +111,70 @@ const ProfileScreen: React.FC = () => {
 
   useEffect(() => {
     fetchProfileData();
+    // run auto-update check only while on Profile screen
+    (async () => {
+      try {
+        const enabled = await isAutoCheckEnabled()
+        if (enabled) {
+          const has = await fetchLatestRelease()
+          if (has) {
+            // show custom styled alert modal
+            setShowUpdateModal(true)
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })()
   }, []);
+
+  const fetchLatestRelease = async (): Promise<boolean> => {
+    try {
+      setIsCheckingUpdate(true)
+      const websiteApi = process.env.EXPO_PUBLIC_DOWNLOAD_APK_URL || (process.env.EXPO_PUBLIC_APP_URL ? `${process.env.EXPO_PUBLIC_APP_URL.replace(/\/$/, '')}/api/latest-release` : '')
+
+      let data: any = null
+
+      // Prefer the website proxy which uses a server-side GitHub token
+      if (websiteApi) {
+        const res = await fetch(websiteApi, { cache: 'no-store' })
+        if (!res.ok) throw new Error('Failed to fetch latest release from website')
+        data = await res.json()
+      } else {
+        const OWNER = 'TECHTUNE-I-T-SOLUTIONS'
+        const REPO = 'matrix-mobile'
+        const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`, { cache: 'no-store' })
+        if (!res.ok) throw new Error('Failed to fetch release')
+        data = await res.json()
+      }
+      setLatestRelease(data)
+      const currentVersion = Application.nativeApplicationVersion || Application.nativeBuildVersion || '1.0.0'
+      const tag = data.tag_name || data.name
+      if (tag && tag !== currentVersion) {
+        setUpdateAvailable(true)
+        return true
+      } else {
+        setUpdateAvailable(false)
+        return false
+      }
+    } catch (err) {
+      console.warn('Update check failed', err)
+      return false
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }
+
+  const handleInstallUpdate = async () => {
+    // Prefer direct asset download if provided
+    const asset = latestRelease?.assets?.[0]
+    const url = asset?.browser_download_url || `https://github.com/TECHTUNE-I-T-SOLUTIONS/matrix-mobile/releases/latest`
+    try {
+      await Linking.openURL(url)
+    } catch (err) {
+      console.warn('Failed to open update URL', err)
+    }
+  }
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -189,10 +273,23 @@ const ProfileScreen: React.FC = () => {
                   <View style={styles.avatarContainer}>
                     {profileData.avatar ? (
                       <Image
-                        source={{ uri: profileData.avatar }}
+                        source={{ uri: proxiedAvatarUri || profileData.avatar }}
                         style={styles.avatar}
-                        onError={() => {
-                          // Fallback to placeholder if image fails to load
+                        onError={(e) => {
+                          console.warn('Avatar load error', e.nativeEvent)
+                          // If original host cannot be resolved from device, try proxy via website
+                          if (!proxiedAvatarUri && process.env.EXPO_PUBLIC_APP_URL) {
+                            try {
+                              const base = process.env.EXPO_PUBLIC_APP_URL.replace(/\/$/, '')
+                              const proxy = `${base}/api/proxy-image?url=${encodeURIComponent(String(profileData.avatar))}`
+                              setProxiedAvatarUri(proxy)
+                              return
+                            } catch (err) {
+                              // ignore
+                            }
+                          }
+
+                          // Fallback to placeholder if proxy also fails
                           setProfileData(prev => prev ? { ...prev, avatar: undefined } : null);
                         }}
                       />
@@ -215,6 +312,19 @@ const ProfileScreen: React.FC = () => {
                     <Text style={[styles.fullName, { color: theme.text }]}>
                       {profileData.firstName} {profileData.lastName}
                     </Text>
+                    <View style={{ flexDirection: 'row', marginTop: 6 }}>
+                      <TouchableOpacity onPress={fetchLatestRelease} style={{ marginRight: 12 }}>
+                        <Text style={{ color: theme.primary, fontWeight: '600' }}>{isCheckingUpdate ? 'Checking...' : 'Check for update'}</Text>
+                      </TouchableOpacity>
+                      {updateAvailable && (
+                        <>
+                          <TouchableOpacity onPress={handleInstallUpdate}>
+                            <Text style={{ color: '#047603', fontWeight: '700' }}>Install</Text>
+                          </TouchableOpacity>
+                          <ApkInstaller />
+                        </>
+                      )}
+                    </View>
                     <Text
                       style={[
                         styles.email,
@@ -566,6 +676,19 @@ const ProfileScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Update available modal (styled) */}
+      <CustomAlert
+        visible={showUpdateModal}
+        title="Update available"
+        message="A new release is available. Open Profile → Update to download."
+        type="info"
+        buttons={[
+          { text: 'LATER', onPress: () => setShowUpdateModal(false), style: 'cancel' },
+          { text: 'OPEN', onPress: () => { setShowUpdateModal(false); handleInstallUpdate() } },
+        ]}
+        onClose={() => setShowUpdateModal(false)}
+      />
     </>
   );
 };

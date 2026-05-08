@@ -5,6 +5,7 @@ import { RouteProp } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList, DashboardStackParamList } from '../../navigation/types';
 import CustomBottomNavigation from '../../components/CustomBottomNavigation';
+import FloatingSupportButton from '../../components/FloatingSupportButton';
 import DashboardScreen from './DashboardScreen';
 import FundWalletScreen from './FundWalletScreen';
 import ServicesScreen from './ServicesScreen';
@@ -73,6 +74,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ route }) => {
         </DashboardStack.Navigator>
       </View>
       <CustomBottomNavigation />
+      <FloatingSupportButton />
     </SafeAreaView>
   );
 };

@@ -1,5 +1,6 @@
 // src/screens/SignupScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { AccessibilityInfo, findNodeHandle, Modal, Pressable, SafeAreaView } from 'react-native';
 import {
   View,
   Text,
@@ -17,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import { apiClient } from '../../services/apiClient';
@@ -24,6 +26,7 @@ import ProgressIndicator from '../../components/ProgressIndicator';
 import ThemeToggle from '../../components/ThemeToggle';
 import CustomAlert from '../../components/CustomAlert';
 import { Ionicons } from '@expo/vector-icons';
+import { termsText, privacyText } from '../../legal/legalTexts';
 
 const { width, height } = Dimensions.get('window');
 
@@ -71,6 +74,9 @@ const SignupScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const checkboxRef = useRef<React.ElementRef<typeof TouchableOpacity> | null>(null);
+  const [showTosModal, setShowTosModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [alert, setAlert] = useState({
     visible: false,
     title: '',
@@ -78,6 +84,15 @@ const SignupScreen: React.FC = () => {
     type: 'info' as 'success' | 'error' | 'warning' | 'info',
     buttons: undefined as Array<{ text: string; onPress: () => void; style?: 'cancel' | 'destructive' }> | undefined,
   });
+
+  useEffect(() => {
+    if (step === 4 && checkboxRef.current) {
+      const node = findNodeHandle(checkboxRef.current)
+      if (node) {
+        AccessibilityInfo.setAccessibilityFocus(node)
+      }
+    }
+  }, [step]);
 
   // NEW USER FORM
   const [newUserForm, setNewUserForm] = useState({
@@ -246,17 +261,6 @@ const SignupScreen: React.FC = () => {
       return false;
     }
 
-    if (!acceptTerms) {
-      setAlert({
-        visible: true,
-        title: 'Terms Required',
-        message: 'Please accept terms and conditions to continue',
-        type: 'warning',
-        buttons: undefined,
-      });
-      return false;
-    }
-
     return true;
   };
 
@@ -374,17 +378,6 @@ const SignupScreen: React.FC = () => {
         title: 'Password Mismatch',
         message: 'The passwords you entered do not match',
         type: 'error',
-        buttons: undefined,
-      });
-      return false;
-    }
-
-    if (!acceptTerms) {
-      setAlert({
-        visible: true,
-        title: 'Terms Required',
-        message: 'Please accept terms and conditions to continue',
-        type: 'warning',
         buttons: undefined,
       });
       return false;
@@ -621,29 +614,103 @@ const SignupScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const response = await apiClient.post<SignupResponse>('/auth/signup', {
+      const response = await apiClient.post<any>('/auth/signup', {
         ...newUserForm,
         step: 'create',
         referralCode: newUserForm.referralCode || undefined,
       });
 
-      if (response.success) {
-        setAlert({
-          visible: true,
-          title: 'Account Created!',
-          message: 'Your account has been created successfully! Redirecting to KYC verification...',
-          type: 'success',
-          buttons: undefined,
-        });
-        // Store user data for KYC
-        setTimeout(() => {
-          navigation.navigate('KYC');
-        }, 2000);
-      } else {
-        Alert.alert('❌ Signup Failed', response.error || 'Failed to create account');
+      if (!response.success) {
+        setAlert({ visible: true, title: 'Signup Failed', message: response.error || 'Failed to create account', type: 'error', buttons: undefined });
+        return;
       }
+
+      const body = response.data || {}
+
+      // If server indicates KYC required (existing Payscribe customer), persist and navigate to KYC
+      if (body.kycRequired) {
+        try {
+          await AsyncStorage.setItem('kycPendingCustomer', JSON.stringify({
+            customerId: body.customer?.customerId || null,
+            email: body.customer?.email || newUserForm.email,
+            firstName: body.customer?.firstName || newUserForm.firstName,
+            lastName: body.customer?.lastName || newUserForm.lastName,
+            phone: (body.customer?.phone || newUserForm.mobile) && (() => {
+              const raw = String(body.customer?.phone || newUserForm.mobile || '').trim()
+              if (raw.startsWith('+')) return raw
+              const digits = raw.replace(/\D/g, '')
+              if (digits.startsWith('0')) return `+234${digits.substring(1)}`
+              if (digits.startsWith('234')) return `+${digits}`
+              return `+234${digits}`
+            })(),
+            isNewUser: true,
+            kycMissingFields: body.kycMissingFields || [],
+          }))
+        } catch (e) { console.warn('Failed to persist pending KYC customer', e) }
+
+        setAlert({ visible: true, title: 'KYC Required', message: body.message || 'Please complete KYC to finish signup', type: 'info', buttons: undefined })
+        setTimeout(() => navigation.navigate('KYC'), 1200)
+        return
+      }
+
+      if (body && body.success !== true) {
+        setAlert({ visible: true, title: 'Signup Failed', message: body.error || body.message || 'Failed to create account', type: 'error', buttons: undefined })
+        return
+      }
+
+      // Success path
+      if (body && body.user) {
+        try {
+          const createdUser = body.user
+          const pending = createdUser
+            ? {
+                customerId: createdUser.id,
+                email: createdUser.email,
+                firstName: createdUser.firstName || createdUser.first_name || newUserForm.firstName,
+                lastName: createdUser.lastName || createdUser.last_name || newUserForm.lastName,
+                phone: (createdUser.mobile || newUserForm.mobile) && (() => {
+                  const raw = String(createdUser.mobile || newUserForm.mobile || '').trim()
+                  if (raw.startsWith('+')) return raw
+                  const digits = raw.replace(/\D/g, '')
+                  if (digits.startsWith('0')) return `+234${digits.substring(1)}`
+                  if (digits.startsWith('234')) return `+${digits}`
+                  return `+234${digits}`
+                })(),
+                isNewUser: true,
+              }
+            : {
+                customerId: null,
+                email: newUserForm.email,
+                firstName: newUserForm.firstName,
+                lastName: newUserForm.lastName,
+                phone: (newUserForm.mobile) && (() => {
+                  const raw = String(newUserForm.mobile || '').trim()
+                  if (raw.startsWith('+')) return raw
+                  const digits = raw.replace(/\D/g, '')
+                  if (digits.startsWith('0')) return `+234${digits.substring(1)}`
+                  if (digits.startsWith('234')) return `+${digits}`
+                  return `+234${digits}`
+                })(),
+                isNewUser: true,
+              }
+
+          await AsyncStorage.setItem('kycPendingCustomer', JSON.stringify(pending))
+        } catch (e) { console.warn('Failed to persist pending KYC customer', e) }
+      }
+
+      setAlert({
+        visible: true,
+        title: 'Account Created!',
+        message: 'Your account has been created successfully! Redirecting to KYC verification...',
+        type: 'success',
+        buttons: undefined,
+      });
+
+      setTimeout(() => {
+        try { navigation.navigate('KYC') } catch (e) { console.warn('Navigation to KYC failed', e) }
+      }, 1200)
     } catch (error) {
-      Alert.alert('🚨 Error', 'An unexpected error occurred');
+      setAlert({ visible: true, title: 'Error', message: 'An unexpected error occurred', type: 'error', buttons: undefined })
     } finally {
       setIsLoading(false);
     }
@@ -741,12 +808,12 @@ const SignupScreen: React.FC = () => {
 
   const handleVerifyExisting = async () => {
     if (!verificationValue) {
-      Alert.alert('🔍 Verification Required', `Please enter your ${verificationField === 'phone' ? 'phone number' : 'date of birth'}!`);
+      setAlert({ visible: true, title: 'Verification Required', message: `Please enter your ${verificationField === 'phone' ? 'phone number' : 'date of birth'}!`, type: 'warning', buttons: undefined });
       return;
     }
 
     if (!foundCustomer) {
-      Alert.alert('❌ Error', 'Customer not found');
+      setAlert({ visible: true, title: 'Error', message: 'Customer not found', type: 'error', buttons: undefined });
       return;
     }
 
@@ -764,14 +831,14 @@ const SignupScreen: React.FC = () => {
       }
 
       if (!isValid) {
-        Alert.alert('❌ Verification Failed', `The ${verificationField} you entered doesn't match our records.`);
+        setAlert({ visible: true, title: 'Verification Failed', message: `The ${verificationField} you entered doesn't match our records.`, type: 'error', buttons: undefined });
         return;
       }
 
-      Alert.alert('✅ Verified!', 'Identity verified successfully! Now create your password.');
+      setAlert({ visible: true, title: 'Verified', message: 'Identity verified successfully! Now create your password.', type: 'success', buttons: undefined });
       setStep(3);
     } catch (error) {
-      Alert.alert('🚨 Error', 'Verification failed');
+      setAlert({ visible: true, title: 'Error', message: 'Verification failed', type: 'error', buttons: undefined });
     } finally {
       setIsLoading(false);
     }
@@ -779,33 +846,33 @@ const SignupScreen: React.FC = () => {
 
   const handleCompleteExisting = async () => {
     if (!username.trim()) {
-      Alert.alert('👤 Username Required', 'Please enter a username!');
+      setAlert({ visible: true, title: 'Username Required', message: 'Please enter a username!', type: 'warning', buttons: undefined });
       return;
     }
 
     if (password.length < 8) {
-      Alert.alert('🔒 Password Too Short', 'Password must be at least 8 characters!');
+      setAlert({ visible: true, title: 'Password Too Short', message: 'Password must be at least 8 characters!', type: 'warning', buttons: undefined });
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('🔄 Password Mismatch', 'Passwords do not match!');
+      setAlert({ visible: true, title: 'Password Mismatch', message: 'Passwords do not match!', type: 'error', buttons: undefined });
       return;
     }
 
     if (!acceptTerms) {
-      Alert.alert('📋 Terms Required', 'Please accept terms and conditions!');
+      setAlert({ visible: true, title: 'Terms Required', message: 'Please accept terms and conditions!', type: 'warning', buttons: undefined });
       return;
     }
 
     if (!foundCustomer) {
-      Alert.alert('❌ Error', 'Customer not found');
+      setAlert({ visible: true, title: 'Error', message: 'Customer not found', type: 'error', buttons: undefined });
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await apiClient.post<SignupResponse>('/auth/signup', {
+      const response = await apiClient.post<any>('/auth/signup', {
         customerId: foundCustomer.customerId,
         email: foundCustomer.email,
         username,
@@ -813,22 +880,56 @@ const SignupScreen: React.FC = () => {
         step: 'complete_existing',
       });
 
-      if (response.success) {
-        setAlert({
-          visible: true,
-          title: 'Account Linked!',
-          message: 'Your account has been linked successfully! Proceeding to KYC verification...',
-          type: 'success',
-          buttons: undefined,
-        });
-        setTimeout(() => {
-          navigation.navigate('KYC');
-        }, 1500);
-      } else {
-        Alert.alert('❌ Linking Failed', response.error || 'Failed to complete signup');
+      if (!response.success) {
+        setAlert({ visible: true, title: 'Linking Failed', message: response.error || 'Failed to complete signup', type: 'error', buttons: undefined });
+        return;
       }
+
+      const body = response.data || {}
+
+      if (body.kycRequired) {
+        try {
+          await AsyncStorage.setItem('kycPendingCustomer', JSON.stringify({
+            customerId: body.customer?.customerId || foundCustomer.customerId,
+            email: body.customer?.email || foundCustomer.email,
+            firstName: body.customer?.firstName || foundCustomer.firstName,
+            lastName: body.customer?.lastName || foundCustomer.lastName,
+            phone: (body.customer?.phone || foundCustomer.phone) && (() => {
+              const raw = String(body.customer?.phone || foundCustomer.phone || '').trim()
+              if (raw.startsWith('+')) return raw
+              const digits = raw.replace(/\D/g, '')
+              if (digits.startsWith('0')) return `+234${digits.substring(1)}`
+              if (digits.startsWith('234')) return `+${digits}`
+              return `+234${digits}`
+            })(),
+            isNewUser: false,
+            kycMissingFields: body.kycMissingFields || [],
+          }))
+        } catch (e) { console.warn('Failed to persist pending KYC customer', e) }
+
+        setAlert({ visible: true, title: 'KYC Required', message: body.message || 'Please complete KYC', type: 'info', buttons: undefined })
+        setTimeout(() => navigation.navigate('KYC'), 1200)
+        return
+      }
+
+      if (body && body.success !== true) {
+        setAlert({ visible: true, title: 'Linking Failed', message: body.error || body.message || 'Failed to complete signup', type: 'error', buttons: undefined })
+        return
+      }
+
+      setAlert({
+        visible: true,
+        title: 'Account Linked!',
+        message: 'Your account has been linked successfully! Proceeding to KYC verification...',
+        type: 'success',
+        buttons: undefined,
+      });
+
+      setTimeout(() => {
+        try { navigation.navigate('KYC') } catch (e) { console.warn('Navigation to KYC failed', e) }
+      }, 1200);
     } catch (error) {
-      Alert.alert('🚨 Error', 'An unexpected error occurred');
+      setAlert({ visible: true, title: 'Error', message: 'An unexpected error occurred', type: 'error', buttons: undefined });
     } finally {
       setIsLoading(false);
     }
@@ -1111,7 +1212,12 @@ const SignupScreen: React.FC = () => {
 
             <View style={styles.termsContainer}>
               <TouchableOpacity
-                style={styles.checkboxContainer}
+                ref={checkboxRef}
+                accessible
+                accessibilityRole="checkbox"
+                accessibilityLabel="Agree to Terms of Service and Privacy Policy"
+                accessibilityState={{ checked: acceptTerms }}
+                style={[styles.checkboxContainer, styles.checkboxTouchable]}
                 onPress={() => setAcceptTerms(!acceptTerms)}
               >
                 <View style={[styles.checkbox, acceptTerms && { backgroundColor: theme.primary }]}>
@@ -1119,9 +1225,19 @@ const SignupScreen: React.FC = () => {
                 </View>
                 <Text style={[styles.termsText, { color: theme.textSecondary }]}>
                   I agree to the{' '}
-                  <Text style={[styles.linkText, { color: theme.primary }]}>Terms of Service</Text>
+                    <Text
+                      style={[styles.linkText, { color: theme.primary }]}
+                      onPress={() => setShowTosModal(true)}
+                    >
+                      Terms of Service
+                    </Text>
                   {' '}and{' '}
-                  <Text style={[styles.linkText, { color: theme.primary }]}>Privacy Policy</Text>
+                  <Text
+                    style={[styles.linkText, { color: theme.primary }]}
+                    onPress={() => setShowPrivacyModal(true)}
+                  >
+                    Privacy Policy
+                  </Text>
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1394,7 +1510,12 @@ const SignupScreen: React.FC = () => {
 
             <View style={styles.termsContainer}>
               <TouchableOpacity
-                style={styles.checkboxContainer}
+                ref={checkboxRef}
+                accessible
+                accessibilityRole="checkbox"
+                accessibilityLabel="Agree to Terms of Service and Privacy Policy"
+                accessibilityState={{ checked: acceptTerms }}
+                style={[styles.checkboxContainer, styles.checkboxTouchable]}
                 onPress={() => setAcceptTerms(!acceptTerms)}
               >
                 <View style={[styles.checkbox, acceptTerms && { backgroundColor: theme.primary }]}>
@@ -1402,9 +1523,19 @@ const SignupScreen: React.FC = () => {
                 </View>
                 <Text style={[styles.termsText, { color: theme.textSecondary }]}>
                   I agree to the{' '}
-                  <Text style={[styles.linkText, { color: theme.primary }]}>Terms of Service</Text>
+                    <Text
+                      style={[styles.linkText, { color: theme.primary }]}
+                      onPress={() => setShowTosModal(true)}
+                    >
+                      Terms of Service
+                    </Text>
                   {' '}and{' '}
-                  <Text style={[styles.linkText, { color: theme.primary }]}>Privacy Policy</Text>
+                  <Text
+                    style={[styles.linkText, { color: theme.primary }]}
+                    onPress={() => setShowPrivacyModal(true)}
+                  >
+                    Privacy Policy
+                  </Text>
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1512,17 +1643,12 @@ const SignupScreen: React.FC = () => {
 
           {/* Login Link */}
           <View style={styles.loginContainer}>
-            <Text style={[styles.loginText, { color: theme.textSecondary }]}>
-              Already have an account?{' '}
-            </Text>
+            <Text style={[styles.termsText, { color: theme.textSecondary }]}>Already have an account? </Text>
             <TouchableOpacity onPress={navigateToLogin}>
-              <Text style={[styles.loginLink, { color: theme.primary }]}>
-                Sign In
-              </Text>
+              <Text style={[styles.linkText, { color: theme.primary }]}>Log in</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Custom Alert */}
           <CustomAlert
             visible={alert.visible}
             title={alert.title}
@@ -1531,6 +1657,36 @@ const SignupScreen: React.FC = () => {
             buttons={alert.buttons}
             onClose={() => setAlert({ ...alert, visible: false })}
           />
+
+          {/* Terms Modal */}
+          <Modal visible={showTosModal} animationType="slide" onRequestClose={() => setShowTosModal(false)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+              <ScrollView contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12, color: theme.text}}>Terms of Service</Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, marginBottom: 12, color: theme.text }}>
+                  {termsText}
+                </Text>
+                <Pressable onPress={() => setShowTosModal(false)} style={{ marginTop: 12, padding: 12, backgroundColor: theme.primary, borderRadius: 8 }}>
+                  <Text style={{ color: '#fff', textAlign: 'center' }}>Close</Text>
+                </Pressable>
+              </ScrollView>
+            </SafeAreaView>
+          </Modal>
+
+          {/* Privacy Modal */}
+          <Modal visible={showPrivacyModal} animationType="slide" onRequestClose={() => setShowPrivacyModal(false)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+              <ScrollView contentContainerStyle={{ padding: 20 }}>
+                <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12, color: theme.text }}>Privacy Policy</Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, marginBottom: 12, color: theme.text }}>
+                  {privacyText}
+                </Text>
+                <Pressable onPress={() => setShowPrivacyModal(false)} style={{ marginTop: 12, padding: 12, backgroundColor: theme.primary, borderRadius: 8 }}>
+                  <Text style={{ color: '#fff', textAlign: 'center' }}>Close</Text>
+                </Pressable>
+              </ScrollView>
+            </SafeAreaView>
+          </Modal>
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -1699,8 +1855,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   checkbox: {
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     borderRadius: 6,
     borderWidth: 2,
     borderColor: '#d1d5db',
@@ -1708,6 +1864,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
     marginTop: 2,
+  },
+  checkboxTouchable: {
+    paddingVertical: 8,
+    paddingRight: 8,
+    alignItems: 'flex-start',
   },
   checkmark: {
     color: '#ffffff',

@@ -13,6 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeToggle from '../../components/ThemeToggle';
 
@@ -22,7 +23,7 @@ interface ContactMethod {
   description: string;
   action: string;
   available: string;
-  type: 'whatsapp' | 'phone' | 'email';
+  type: 'whatsapp' | 'phone' | 'email' | 'group';
 }
 
 interface FAQ {
@@ -33,6 +34,7 @@ interface FAQ {
 const SupportScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
+    const { session } = useSession()
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(null);
 
   // Contact form state
@@ -53,6 +55,14 @@ const SupportScreen: React.FC = () => {
       action: '+2348109816653',
       available: '24/7',
       type: 'whatsapp',
+    },
+    {
+      icon: 'people',
+      title: 'Support Group',
+      description: 'Join our WhatsApp support group',
+      action: 'https://chat.whatsapp.com/Lng1V0v71BXAse8QoXljQk',
+      available: '24/7',
+      type: 'group',
     },
     {
       icon: 'call',
@@ -119,9 +129,17 @@ const SupportScreen: React.FC = () => {
     let url = '';
 
     switch (method.type) {
-      case 'whatsapp':
-        url = `https://wa.me/${method.action.replace('+', '')}`;
-        break;
+      case 'whatsapp': {
+        const name = session.user?.full_name || session.user?.email || ''
+        const id = session.user?.id || ''
+        const message = `Hello Support, I am ${name} (ID: ${id}). I need help with...`
+        const encoded = encodeURIComponent(message)
+        url = `https://wa.me/${method.action.replace('+', '')}?text=${encoded}`
+        break
+      }
+      case 'group':
+        url = method.action // direct group link
+        break
       case 'phone':
         url = `tel:${method.action}`;
         break;
@@ -135,8 +153,11 @@ const SupportScreen: React.FC = () => {
         if (supported) {
           Linking.openURL(url);
         } else {
-          Alert.alert('Error', `Cannot open ${method.title.toLowerCase()}`);
+          // Try open directly and show friendly alert on failure
+          Linking.openURL(url).catch(() => Alert.alert('Error', `Cannot open ${method.title.toLowerCase()}`));
         }
+      }).catch(() => {
+        Linking.openURL(url).catch(() => Alert.alert('Error', `Cannot open ${method.title.toLowerCase()}`));
       });
     }
   };

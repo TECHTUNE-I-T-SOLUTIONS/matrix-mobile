@@ -15,6 +15,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import ThemeToggle from '../../components/ThemeToggle';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isAutoCheckEnabled, setAutoCheckEnabled } from '../../hooks/useAutoUpdateCheck';
 
 const SettingsScreen: React.FC = () => {
   const { theme, isDark, setThemeMode } = useTheme();
@@ -23,6 +25,19 @@ const SettingsScreen: React.FC = () => {
   const [notifications, setNotifications] = useState(true);
   const [biometric, setBiometric] = useState(false);
   const [autoLock, setAutoLock] = useState(true);
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true);
+
+  // load saved setting
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const enabled = await isAutoCheckEnabled()
+        setAutoCheckUpdates(enabled)
+      } catch (e) {
+        console.warn('Failed to load auto-check updates setting', e)
+      }
+    })()
+  }, [])
 
   const handleLogout = () => {
     Alert.alert(
@@ -113,6 +128,20 @@ const SettingsScreen: React.FC = () => {
           icon: 'globe',
           label: 'Currency',
           onPress: () => Alert.alert('Currency', 'Currently set to Nigerian Naira (NGN).'),
+        },
+        {
+          icon: 'download',
+          label: 'Auto-check updates on startup',
+          type: 'switch',
+          value: autoCheckUpdates,
+          onValueChange: async (v: boolean) => {
+            setAutoCheckUpdates(v)
+            try {
+              await setAutoCheckEnabled(v)
+            } catch (e) {
+              console.warn('Failed to save auto-check setting', e)
+            }
+          },
         },
       ],
     },

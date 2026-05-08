@@ -62,9 +62,16 @@ class ApiClient {
       const data = await response.json();
 
       if (!response.ok) {
+        // Try to extract meaningful error message from common response shapes
+        const serverError =
+          (data && (data.error || data.message)) ||
+          (data && data.details && (data.details.message || String(data.details))) ||
+          `HTTP ${response.status}`;
+
         return {
           success: false,
-          error: data.message || `HTTP ${response.status}`,
+          error: serverError,
+          data,
         };
       }
 
@@ -110,6 +117,34 @@ class ApiClient {
 
   async delete<T>(endpoint: string, headers?: Record<string, string>): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE', headers });
+  }
+
+  // Upload FormData (files) without forcing JSON content-type
+  async upload<T>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
+    try {
+      const url = `${this.baseURL}${endpoint}`;
+      const token = await this.getAuthToken();
+
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData as any,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const serverError = (data && (data.error || data.message)) || `HTTP ${response.status}`;
+        return { success: false, error: serverError, data };
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Upload error' };
+    }
   }
 }
 

@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -18,8 +19,11 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
-import { apiClient } from '../../services/apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+// apiClient used via alias `api` below
 import * as ImagePicker from 'expo-image-picker';
+import { apiClient as api } from '../../services/apiClient';
+import { Platform } from 'react-native';
 import ThemeToggle from '../../components/ThemeToggle';
 
 const { width, height } = Dimensions.get('window');
@@ -28,9 +32,12 @@ type KYCScreenNavigationProp = StackNavigationProp<RootStackParamList, 'KYC'>;
 
 interface KYCData {
   idType: 'passport' | 'drivers_license' | 'national_id' | '';
-  idNumber: string;
-  idImage: string | null;
-  selfieImage: string | null;
+  idNumber: string; // identity document number
+  identificationType: 'BVN' | 'NIN' | '';
+  identificationNumber: string; // BVN/NIN
+  dob: string; // YYYY-MM-DD
+  idImage: string | null; // identity document image
+  selfieImage: string | null; // profile photo
   address: string;
   city: string;
   state: string;
@@ -46,14 +53,22 @@ const KYCScreen: React.FC = () => {
   const [kycData, setKycData] = useState<KYCData>({
     idType: '',
     idNumber: '',
+    identificationType: '',
+    identificationNumber: '',
+    dob: '',
     idImage: null,
     selfieImage: null,
     address: '',
     city: '',
     state: '',
     postalCode: '',
-    country: 'Nigeria',
+    country: 'NG',
   });
+  const [showStateModal, setShowStateModal] = useState(false);
+
+  const NIGERIAN_STATES = [
+    'Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara','FCT'
+  ];
 
   const [isLoading, setIsLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
@@ -85,11 +100,13 @@ const KYCScreen: React.FC = () => {
       quality: 0.8,
     });
 
-    if (!result.canceled) {
+    const cancelled = (result as any).canceled ?? (result as any).cancelled ?? false
+    const assets = (result as any).assets ?? (result as any).uri ? [{ uri: (result as any).uri }] : []
+    if (!cancelled && assets.length > 0) {
       if (type === 'id') {
-        setKycData({ ...kycData, idImage: result.assets[0].uri });
+        setKycData({ ...kycData, idImage: assets[0].uri });
       } else {
-        setKycData({ ...kycData, selfieImage: result.assets[0].uri });
+        setKycData({ ...kycData, selfieImage: assets[0].uri });
       }
     }
   };
@@ -108,11 +125,13 @@ const KYCScreen: React.FC = () => {
       quality: 0.8,
     });
 
-    if (!result.canceled) {
+    const cancelled2 = (result as any).canceled ?? (result as any).cancelled ?? false
+    const assets2 = (result as any).assets ?? (result as any).uri ? [{ uri: (result as any).uri }] : []
+    if (!cancelled2 && assets2.length > 0) {
       if (type === 'id') {
-        setKycData({ ...kycData, idImage: result.assets[0].uri });
+        setKycData({ ...kycData, idImage: assets2[0].uri });
       } else {
-        setKycData({ ...kycData, selfieImage: result.assets[0].uri });
+        setKycData({ ...kycData, selfieImage: assets2[0].uri });
       }
     }
   };
@@ -128,6 +147,22 @@ const KYCScreen: React.FC = () => {
       return false;
     }
 
+    if (!kycData.identificationType) {
+      Alert.alert('Identification Required', 'Please select BVN or NIN');
+      return false;
+    }
+
+    if (!kycData.identificationNumber.trim()) {
+      Alert.alert('Identification Number Required', 'Please enter your BVN/NIN');
+      return false;
+    }
+
+    // If BVN selected, ensure 11 digits
+    if (kycData.identificationType === 'BVN' && !/^\d{11}$/.test(kycData.identificationNumber)) {
+      Alert.alert('Invalid BVN', 'BVN must be exactly 11 digits');
+      return false;
+    }
+
     if (!kycData.idImage) {
       Alert.alert('ID Photo Required', 'Please upload a photo of your ID');
       return false;
@@ -135,6 +170,11 @@ const KYCScreen: React.FC = () => {
 
     if (!kycData.selfieImage) {
       Alert.alert('Selfie Required', 'Please upload a selfie for verification');
+      return false;
+    }
+
+    if (!kycData.dob) {
+      Alert.alert('Date of Birth Required', 'Please enter your date of birth (YYYY-MM-DD)');
       return false;
     }
 
@@ -183,30 +223,142 @@ const KYCScreen: React.FC = () => {
   const handleSubmit = async () => {
     setIsLoading(true);
     try {
-      // In a real app, you'd upload images to a server first
-      const response = await apiClient.post('/kyc/submit', {
-        ...kycData,
-        userId: session.user?.id,
-      });
+      let userId = session.user?.id
+      let email = session.user?.email || ''
+      const _metadata = (session.user as any)?.user_metadata || {}
+      let firstName = _metadata?.first_name || ''
+      let lastName = _metadata?.last_name || ''
+      let phone = _metadata?.mobile || _metadata?.phone || ''
+
+      if (!userId) {
+        const stored = await AsyncStorage.getItem('kycPendingCustomer')
+        if (stored) {
+          const pending = JSON.parse(stored)
+          userId = pending.customerId || pending.customerId
+          email = email || pending.email || ''
+          firstName = firstName || pending.firstName || ''
+          lastName = lastName || pending.lastName || ''
+          phone = phone || pending.phone || ''
+        }
+      }
+
+      if (!userId) {
+        Alert.alert('Error', 'Unable to find user session or pending signup. Please login again.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Upload images first (if present) to backend upload endpoint
+      let identificationPhotoUrl: string | null = null
+      let profilePhotoUrl: string | null = null
+      let identityImageUrl: string | null = null
+
+      const uploadFile = async (localUri: string, bucket: string) => {
+        try {
+          // Convert local file URI to blob
+          const uri = localUri;
+          const response = await fetch(uri);
+          const blob = await response.blob();
+          const filename = uri.split('/').pop() || `${Date.now()}.jpg`;
+
+          const form = new FormData()
+          // @ts-ignore — React Native FormData accepts file objects
+          form.append('file', {
+            uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+            name: filename,
+            type: blob.type || 'image/jpeg',
+          })
+          form.append('bucket', bucket)
+          form.append('customerId', userId)
+
+          const uploadResp = await api.upload('/upload/kyc-documents', form)
+          if (uploadResp.success && uploadResp.data) {
+            return (uploadResp.data as any).url as string
+          }
+        } catch (e) {
+          console.warn('Upload failed', e)
+        }
+        return null
+      }
+
+      if (kycData.idImage) {
+        identificationPhotoUrl = await uploadFile(kycData.idImage, 'identity-documents')
+      }
+
+      if (kycData.selfieImage) {
+        profilePhotoUrl = await uploadFile(kycData.selfieImage, 'profile-photos')
+      }
+
+      // For compatibility: identityImageUrl use the same as identificationPhotoUrl if present
+      identityImageUrl = identificationPhotoUrl || null
+
+      // Normalize phone to international format with leading + (e.g. +2348012345678)
+      const rawPhone = (phone || '').trim()
+      let phoneToSend = rawPhone
+      const digitsOnly = rawPhone.replace(/\D/g, '')
+      if (rawPhone.startsWith('+')) {
+        // keep as-is (already international)
+        phoneToSend = rawPhone
+      } else if (digitsOnly.startsWith('0')) {
+        phoneToSend = `+234${digitsOnly.substring(1)}`
+      } else if (digitsOnly.startsWith('234')) {
+        phoneToSend = `+${digitsOnly}`
+      } else {
+        // fallback: assume local number, prepend +234
+        phoneToSend = `+234${digitsOnly}`
+      }
+
+      // Build payload matching server's expected fields
+      const payload = {
+        userId,
+        email,
+        firstName,
+        lastName,
+        phone: phoneToSend,
+        dob: kycData.dob,
+        addressStreet: kycData.address,
+        addressCity: kycData.city,
+        addressState: kycData.state,
+        addressCountry: kycData.country || 'NG',
+        addressPostalCode: kycData.postalCode,
+        identificationType: kycData.identificationType, // BVN/NIN
+        identificationNumber: kycData.identificationNumber,
+        identificationPhotoUrl: kycData.identificationType !== 'BVN' ? identificationPhotoUrl : null,
+        identityType: kycData.idType,
+        identityNumber: kycData.idNumber,
+        identityCountry: kycData.country || 'NG',
+        identityImageUrl: identityImageUrl,
+        profilePhotoUrl: profilePhotoUrl,
+      }
+
+      const response = await api.post('/auth/kyc-submit', payload)
 
       if (response.success) {
+        // Clear any pending KYC marker saved during signup
+        try {
+          await AsyncStorage.removeItem('kycPendingCustomer')
+        } catch (e) {
+          console.warn('Failed to clear kycPendingCustomer', e)
+        }
+
         Alert.alert(
           'KYC Submitted! 🎉',
           'Your verification documents have been submitted. We\'ll review them within 24-48 hours.',
           [
-            {
-              text: 'Continue',
-              onPress: () => navigation.navigate('Main'), // Navigate to main app
-            },
-          ]
-        );
+              {
+                text: 'Continue',
+                onPress: () => navigation.navigate('Auth', { screen: 'Login' }),
+              },
+            ]
+        )
       } else {
-        Alert.alert('Submission Failed', response.error || 'Failed to submit KYC');
+        Alert.alert('Submission Failed', response.error || 'Failed to submit KYC')
       }
     } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred');
+      console.error('KYC submit error', error)
+      Alert.alert('Error', 'An unexpected error occurred')
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
   };
 
@@ -262,6 +414,67 @@ const KYCScreen: React.FC = () => {
           placeholderTextColor={theme.inputPlaceholder}
           value={kycData.idNumber}
           onChangeText={(text) => setKycData({ ...kycData, idNumber: text })}
+        />
+      </View>
+
+      {/* DOB */}
+      <View style={styles.inputContainer}>
+        <Text style={[styles.inputLabel, { color: theme.text }]}>Date of Birth</Text>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.inputBackground,
+              borderColor: theme.inputBorder,
+              color: theme.text,
+            },
+          ]}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor={theme.inputPlaceholder}
+          value={kycData.dob}
+          onChangeText={(text) => setKycData({ ...kycData, dob: text })}
+        />
+      </View>
+
+      {/* Identification Type (BVN/NIN) and Number */}
+      <View style={styles.inputContainer}>
+        <Text style={[styles.inputLabel, { color: theme.text }]}>Identification</Text>
+        <View style={styles.row}>
+          <TouchableOpacity
+            style={[
+              styles.smallButton,
+              kycData.identificationType === 'BVN' && { backgroundColor: theme.primary },
+            ]}
+            onPress={() => setKycData({ ...kycData, identificationType: 'BVN' })}
+          >
+            <Text style={[styles.smallButtonText, { color: kycData.identificationType === 'BVN' ? '#fff' : theme.text }]}>BVN</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.smallButton,
+              kycData.identificationType === 'NIN' && { backgroundColor: theme.primary },
+            ]}
+            onPress={() => setKycData({ ...kycData, identificationType: 'NIN' })}
+          >
+            <Text style={[styles.smallButtonText, { color: kycData.identificationType === 'NIN' ? '#fff' : theme.text }]}>NIN</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.inputBackground,
+              borderColor: theme.inputBorder,
+              color: theme.text,
+              marginTop: 8,
+            },
+          ]}
+          placeholder="Enter BVN or NIN"
+          placeholderTextColor={theme.inputPlaceholder}
+          value={kycData.identificationNumber}
+          onChangeText={(text) => setKycData({ ...kycData, identificationNumber: text })}
+          keyboardType="numeric"
         />
       </View>
 
@@ -381,20 +594,21 @@ const KYCScreen: React.FC = () => {
 
         <View style={[styles.inputContainer, styles.halfWidth]}>
           <Text style={[styles.inputLabel, { color: theme.text }]}>State</Text>
-          <TextInput
+          <TouchableOpacity
             style={[
               styles.input,
               {
                 backgroundColor: theme.inputBackground,
                 borderColor: theme.inputBorder,
-                color: theme.text,
+                justifyContent: 'center',
               },
             ]}
-            placeholder="Lagos"
-            placeholderTextColor={theme.inputPlaceholder}
-            value={kycData.state}
-            onChangeText={(text) => setKycData({ ...kycData, state: text })}
-          />
+            onPress={() => setShowStateModal(true)}
+          >
+            <Text style={{ color: kycData.state ? theme.text : theme.inputPlaceholder }}>
+              {kycData.state || 'Select state'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -431,7 +645,7 @@ const KYCScreen: React.FC = () => {
             ]}
             placeholder="Nigeria"
             placeholderTextColor={theme.inputPlaceholder}
-            value={kycData.country}
+            value={kycData.country === 'NG' ? 'Nigeria' : kycData.country}
             onChangeText={(text) => setKycData({ ...kycData, country: text })}
             editable={false}
           />
@@ -562,6 +776,27 @@ const KYCScreen: React.FC = () => {
         {/* Step Content */}
         {renderCurrentStep()}
 
+        {/* State Selection Modal */}
+        <Modal visible={showStateModal} animationType="slide" onRequestClose={() => setShowStateModal(false)}>
+          <View style={{ flex: 1, padding: 20, backgroundColor: theme.background }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 12 }}>Select State</Text>
+            <ScrollView>
+              {NIGERIAN_STATES.map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  onPress={() => { setKycData({ ...kycData, state: s }); setShowStateModal(false); }}
+                  style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}
+                >
+                  <Text style={{ color: theme.text }}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity onPress={() => setShowStateModal(false)} style={{ marginTop: 12, padding: 12, backgroundColor: theme.primary, borderRadius: 8 }}>
+              <Text style={{ color: '#fff', textAlign: 'center' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+
         {/* Navigation Buttons */}
         <View style={styles.buttonContainer}>
           {currentStep > 1 && (
@@ -687,6 +922,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 4,
+  },
+  smallButton: {
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    marginRight: 8,
+  },
+  smallButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   idTypeIcon: {
     fontSize: 24,

@@ -26,7 +26,7 @@ export interface Session {
 
 interface SessionContextType {
   session: Session;
-  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; kycRequired?: boolean }>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
@@ -207,8 +207,16 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         // Save session to state and storage
         setSession(newSession);
         await AsyncStorage.setItem('session', JSON.stringify(newSession));
+          // If backend says KYC is verified, clear any pending signup marker
+          try {
+            if (!newSession.user?.kyc_required) {
+              await AsyncStorage.removeItem('kycPendingCustomer')
+            }
+          } catch (e) {
+            console.warn('Failed to clear kycPendingCustomer after login', e)
+          }
         
-        return { success: true };
+        return { success: true, kycRequired: !!newSession.user?.kyc_required };
       } else {
         console.error('[Login] Missing user data:', backendUser);
         return { 
@@ -279,7 +287,37 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
 
   const completeResumeAuth = async () => {
     try {
-      const updatedSession = { ...session, requiresResumeAuth: false };
+      // Re-fetch fresh profile from backend to ensure flags (kyc_verified, photo_url) are up-to-date
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.117:3000/api';
+      let updatedUser = session.user
+
+      if (session.accessToken) {
+        try {
+          const res = await fetch(`${apiUrl}/user/profile`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+          })
+          if (res.ok) {
+            const payload = await res.json()
+            if (payload?.user) {
+              const u = payload.user
+              updatedUser = {
+                ...session.user!,
+                email: u.email || session.user?.email,
+                full_name: u.full_name || session.user?.full_name,
+                phone: u.mobile || u.phone || session.user?.phone,
+                avatar_url: u.photo_url || u.avatar_url || session.user?.avatar_url,
+                kyc_status: u.kyc_verified ? 'verified' : session.user?.kyc_status,
+                kyc_required: !u.kyc_verified,
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to fetch profile during resume auth', err)
+        }
+      }
+
+      const updatedSession = { ...session, user: updatedUser || session.user, requiresResumeAuth: false };
       setSession(updatedSession);
       await AsyncStorage.setItem('session', JSON.stringify(updatedSession));
     } catch (error) {

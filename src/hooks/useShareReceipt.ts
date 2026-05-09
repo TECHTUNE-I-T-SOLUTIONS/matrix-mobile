@@ -25,7 +25,7 @@ export const useShareReceipt = (transactionId?: string) => {
 
       // Rename file to something meaningful
       const fileName = `MATRIX_${transactionId || Date.now()}.png`;
-      const newUri = (FileSystem.cacheDirectory as string) + fileName;
+      const newUri = (FileSystem as any).cacheDirectory + fileName;
       await FileSystem.copyAsync({ from: uri, to: newUri });
 
       // Check if sharing is available

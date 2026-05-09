@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { View, Text, StyleSheet, Animated, Easing, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, Animated, Easing, TouchableOpacity, ScrollView } from 'react-native'
 import { apiClient } from '../services/apiClient'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -28,7 +28,7 @@ export const AnnouncementsBanner: React.FC = () => {
         const content = first.content || first.message || null
 
         if (mounted) {
-          setMessage(title && content ? `${title} — ${content.replace(/\r?\n/g, ' ' )}` : (title || content))
+          setMessage(title && content ? `${title} — ${content.replace(/\r?\n/g, ' ')}` : (title || content))
         }
       } catch (e) {
         console.error('Announcements fetch error:', e)
@@ -61,14 +61,20 @@ export const AnnouncementsBanner: React.FC = () => {
     >
       <TouchableOpacity activeOpacity={0.8}>
         <View style={styles.inner}>
-          <View style={{ flexDirection: 'row' }}>
+          <ScrollView
+            horizontal
+            scrollEnabled={false}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ alignItems: 'center' }}
+          >
             <Animated.Text
               onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
               style={[styles.text, { color: theme.text, transform: [{ translateX }] }]}
+              numberOfLines={1}
             >
               {message}
             </Animated.Text>
-          </View>
+          </ScrollView>
         </View>
       </TouchableOpacity>
     </View>

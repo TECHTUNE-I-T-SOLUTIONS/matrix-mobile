@@ -69,7 +69,7 @@ const ApkInstaller: React.FC = () => {
         filename = asset.name
       }
 
-      const localUri = (FileSystem.cacheDirectory as string) + filename
+      const localUri = (FileSystem as any).cacheDirectory + filename
 
       const callback = (downloadProgress: any) => {
         const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite

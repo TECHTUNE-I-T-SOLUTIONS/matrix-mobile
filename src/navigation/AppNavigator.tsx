@@ -29,37 +29,14 @@ const AppNavigator: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Navigate to appropriate screen when session state changes
   useEffect(() => {
-    if (!isReady || !navigationRef.isReady() || session.isLoading) return;
-
-    let targetRoute: keyof RootStackParamList = 'Onboarding';
-
-    if (session.requiresResumeAuth) {
-      targetRoute = 'AuthResume';
-    } else if (session.isAuthenticated) {
-      targetRoute = 'Main';
-    } else {
-      targetRoute = 'Auth'; // Go to auth navigator after logout
-    }
-
-    console.log('[AppNavigator] Navigating to:', targetRoute, 'for session:', {
+    console.log('[AppNavigator] Session state update:', {
       isAuthenticated: session.isAuthenticated,
       requiresResumeAuth: session.requiresResumeAuth,
       isLoading: session.isLoading,
+      isReady,
     });
-
-    // Reset navigation state and navigate to target route
-    navigationRef.navigate(targetRoute);
   }, [session.isAuthenticated, session.requiresResumeAuth, session.isLoading, isReady]);
-
-  useEffect(() => {
-    console.log('[AppNavigator] Session changed:', {
-      isAuthenticated: session.isAuthenticated,
-      requiresResumeAuth: session.requiresResumeAuth,
-      isLoading: session.isLoading,
-    });
-  }, [session.isAuthenticated, session.requiresResumeAuth, session.isLoading]);
 
   // Determine initial route - ALWAYS start with Splash
   // Let the SplashScreen handle navigation based on session state

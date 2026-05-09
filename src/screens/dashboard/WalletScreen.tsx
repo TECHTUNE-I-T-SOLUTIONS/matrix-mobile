@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -118,7 +118,7 @@ const WalletScreen: React.FC = () => {
 
       // Fetch data from multiple endpoints matching web app
       const [walletRes, accountsRes, cardsRes] = await Promise.all([
-        apiClient.get('/payscribe/wallet') as Promise<ApiResponse<{data: {wallet: any; recentTransactions: any[]}}>>,
+        apiClient.get('/payscribe/wallet') as Promise<ApiResponse<{ data: { wallet: any; recentTransactions: any[] } }>>,
         apiClient.get('/payscribe/virtual-accounts') as Promise<ApiResponse<VirtualAccount[]>>,
         apiClient.get('/payscribe/cards') as Promise<ApiResponse<Card[]>>,
       ]);
@@ -145,7 +145,7 @@ const WalletScreen: React.FC = () => {
           // Wrapped: { success: true, data: [...] }
           accounts = accountsData.data;
         }
-        
+
         console.log('[WalletScreen] Extracted accounts:', accounts);
 
         // Extract cards
@@ -233,12 +233,12 @@ const WalletScreen: React.FC = () => {
       if (response.success && response.data) {
         // Handle both nested and direct data structures
         let bankData = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-        
+
         // Remove duplicates based on code to prevent key conflicts
-        const uniqueBanks = bankData.filter((bank: any, index: number, self: any[]) => 
+        const uniqueBanks = bankData.filter((bank: any, index: number, self: any[]) =>
           index === self.findIndex((b: any) => b.code === bank.code)
         );
-        
+
         setBanks(uniqueBanks);
       }
     } catch (error) {
@@ -263,10 +263,10 @@ const WalletScreen: React.FC = () => {
       if (response.success && response.data) {
         console.log('Account verification response:', JSON.stringify(response, null, 2));
         console.log('Account data:', response.data);
-        
+
         // Try multiple ways to extract account name
         let accountNameValue = null;
-        
+
         // Method 1: Direct access
         if (response.data.account_name) {
           accountNameValue = response.data.account_name;
@@ -275,7 +275,7 @@ const WalletScreen: React.FC = () => {
           accountNameValue = response.data.accountName;
           console.log('Found accountName in direct data');
         }
-        
+
         // Method 2: Nested data
         if (!accountNameValue && response.data.data) {
           if (response.data.data.account_name) {
@@ -286,15 +286,15 @@ const WalletScreen: React.FC = () => {
             console.log('Found accountName in nested data');
           }
         }
-        
+
         // Method 3: Check if response.data itself is the account name
         if (!accountNameValue && typeof response.data === 'string') {
           accountNameValue = response.data;
           console.log('Response data is a string, using as account name');
         }
-        
+
         console.log('Final account name value:', accountNameValue);
-        
+
         if (accountNameValue && typeof accountNameValue === 'string') {
           setAccountName(accountNameValue);
           setPayoutStep('amount');
@@ -330,7 +330,7 @@ const WalletScreen: React.FC = () => {
 
     try {
       setProcessingPayout(true);
-      const response = await apiClient.post<{amount: number; fee: number; total: number}>('/payscribe/payouts/fee', {
+      const response = await apiClient.post<{ amount: number; fee: number; total: number }>('/payscribe/payouts/fee', {
         amount: amount,
       });
 
@@ -500,6 +500,26 @@ const WalletScreen: React.FC = () => {
               {/* Overview Tab */}
               {activeTab === 'overview' && walletData && (
                 <View style={styles.tabContent}>
+                  {/* KYC Verification Banner */}
+                  {session.user?.kyc_required && session.user?.kyc_status === 'not_started' && (
+                    <TouchableOpacity
+                      style={[styles.kycBanner, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
+                      onPress={() => navigation.navigate('KYC' as any)}
+                    >
+                      <View style={styles.kycBannerContent}>
+                        <View style={[styles.kycIconContainer, { backgroundColor: theme.primary }]}>
+                          <Ionicons name="shield-checkmark" size={24} color="white" />
+                        </View>
+                        <View style={styles.kycTextContainer}>
+                          <Text style={[styles.kycTitle, { color: theme.text }]}>Verify Your Identity</Text>
+                          <Text style={[styles.kycDescription, { color: theme.textSecondary }]}>
+                            Complete your KYC to unlock all features including virtual cards and higher limits.
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
                   {/* Main Balance Card */}
                   <LinearGradient
                     colors={[theme.primary, theme.primary + 'DD']}
@@ -721,12 +741,26 @@ const WalletScreen: React.FC = () => {
                           <Ionicons
                             name={
                               transaction.transaction_type === 'credit' ? 'arrow-down' :
-                              transaction.transaction_type === 'debit' ? 'arrow-up' : 'swap-horizontal'
+                                transaction.transaction_type === 'debit' ? 'arrow-up' :
+                                  transaction.service_type === 'data' ? 'wifi' :
+                                    transaction.service_type === 'airtime' ? 'call' :
+                                      transaction.service_type === 'cable' ? 'tv' :
+                                        transaction.service_type === 'bank' ? 'business' :
+                                          transaction.service_type === 'card' ? 'card' :
+                                            transaction.service_type === 'wallet_funding' ? 'wallet' :
+                                              transaction.service_type === 'payout' ? 'wallet' : 'swap-horizontal'
                             }
                             size={20}
                             color={
                               transaction.transaction_type === 'credit' ? '#10B981' :
-                              transaction.transaction_type === 'debit' ? '#EF4444' : theme.primary
+                                transaction.transaction_type === 'debit' ? '#EF4444' :
+                                  transaction.service_type === 'data' ? '#10B981' :
+                                    transaction.service_type === 'airtime' ? '#25bace' :
+                                      transaction.service_type === 'cable' ? '#e6d92f' :
+                                        transaction.service_type === 'bank' ? '#EF4444' :
+                                          transaction.service_type === 'card' ? '#EF4444' :
+                                            transaction.service_type === 'wallet_funding' ? '#dbc9c9ff' :
+                                              transaction.service_type === 'payout' ? '#EF4444' : theme.primary
                             }
                           />
                         </View>
@@ -743,7 +777,7 @@ const WalletScreen: React.FC = () => {
                             styles.transactionAmountText,
                             {
                               color: transaction.transaction_type === 'credit' ? '#10B981' :
-                                     transaction.transaction_type === 'debit' ? '#EF4444' : theme.text
+                                transaction.transaction_type === 'debit' ? '#EF4444' : theme.text
                             },
                           ]}>
                             {transaction.transaction_type === 'credit' ? '+' : transaction.transaction_type === 'debit' ? '-' : ''}
@@ -751,7 +785,9 @@ const WalletScreen: React.FC = () => {
                           </Text>
                           <Text style={[styles.transactionStatus, {
                             color: transaction.status === 'completed' ? '#10B981' :
-                                   transaction.status === 'pending' ? '#F59E0B' : '#EF4444'
+                              transaction.status === 'successful' ? '#24e082ff' :
+                                transaction.status === 'pending' ? '#F59E0B' :
+                                  transaction.status === "failed" ? "#ef4444" : '#EF4444'
                           }]}>
                             {transaction.status}
                           </Text>
@@ -1588,7 +1624,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     flex: 1,
   },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  kycBanner: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  kycBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  kycIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  kycTextContainer: {
+    flex: 1,
+  },
+  kycTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  kycDescription: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
 });
 
 export default WalletScreen;
-

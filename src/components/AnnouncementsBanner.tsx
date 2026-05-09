@@ -61,13 +61,14 @@ export const AnnouncementsBanner: React.FC = () => {
     >
       <TouchableOpacity activeOpacity={0.8}>
         <View style={styles.inner}>
-          <Animated.Text
-            onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-            style={[styles.text, { color: theme.text, transform: [{ translateX }] }]}
-            numberOfLines={1}
-          >
-            {message}
-          </Animated.Text>
+          <View style={{ flexDirection: 'row' }}>
+            <Animated.Text
+              onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+              style={[styles.text, { color: theme.text, transform: [{ translateX }] }]}
+            >
+              {message}
+            </Animated.Text>
+          </View>
         </View>
       </TouchableOpacity>
     </View>

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
@@ -28,6 +28,7 @@ import PrivacyPolicyScreen from './PrivacyPolicyScreen';
 import PinSettingsScreen from './PinSettingsScreen';
 import ReferralsScreen from './ReferralsScreen';
 import SuccessScreen from './SuccessScreen';
+import TransactionDetailsScreen from './TransactionDetailsScreen';
 
 const DashboardStack = createStackNavigator<DashboardStackParamList>();
 
@@ -71,6 +72,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ route }) => {
           <DashboardStack.Screen name="PinSettings" component={PinSettingsScreen} />
           <DashboardStack.Screen name="Referrals" component={ReferralsScreen} />
           <DashboardStack.Screen name="Success" component={SuccessScreen} />
+          <DashboardStack.Screen name="TransactionDetails" component={TransactionDetailsScreen} />
         </DashboardStack.Navigator>
       </View>
       <CustomBottomNavigation />

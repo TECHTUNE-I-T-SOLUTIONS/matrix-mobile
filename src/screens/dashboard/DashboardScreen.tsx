@@ -1,5 +1,5 @@
-﻿// src/screens/dashboard/DashboardScreen.tsx
-import React, { useState, useEffect } from 'react';
+// src/screens/dashboard/DashboardScreen.tsx
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   ScrollView,
@@ -10,19 +10,31 @@ import {
   Text,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import { useNavigation } from '@react-navigation/native';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
-import { SkeletonCard } from '../../components/SkeletonLoader';
 import AnnouncementsBanner from '../../components/AnnouncementsBanner';
+import CustomAlert from '../../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 48) / 2;
+const vaCardWidth = width * 0.75;
+
+interface VirtualAccount {
+  id: string;
+  account_name: string;
+  account_number: string;
+  bank_name: string;
+  status: string;
+  created_at: string;
+}
 
 interface DashboardData {
   user: {
@@ -43,6 +55,7 @@ interface DashboardData {
     total_spent: number;
     currency: string;
   };
+  virtualAccounts: VirtualAccount[];
   recentTransactions: Array<{
     id: string;
     transaction_reference: string;
@@ -69,33 +82,54 @@ const DashboardScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const { session } = useSession();
   const navigation = useNavigation<any>();
+
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showBalance, setShowBalance] = useState(true);
+  const [copyingAccount, setCopyingAccount] = useState<string | null>(null);
+  const [alert, setAlert] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const fetchDashboardData = async () => {
     try {
       setError(null);
 
-      // Fetch user profile
+      // Fetch user profile first as it might be critical
       const profileResponse = await apiClient.get('/user/profile');
       if (!profileResponse.success) {
         throw new Error('Failed to fetch profile');
       }
 
-      // Fetch recent transactions
-      const transactionsResponse = await apiClient.post('/transactions/all', {
-        limit: 5,
-      });
-
-      // Fetch notifications
-      const notificationsResponse = await apiClient.get('/notifications');
-      const unreadCountResponse = await apiClient.get('/notifications/unread-count');
+      // Fetch remaining data in parallel for better performance
+      const [transactionsRes, notificationsRes, unreadCountRes, accountsRes] = await Promise.all([
+        apiClient.post('/transactions/all', { limit: 5 }),
+        apiClient.get('/notifications'),
+        apiClient.get('/notifications/unread-count'),
+        apiClient.get('/payscribe/virtual-accounts')
+      ]);
 
       const user = (profileResponse.data as any).user;
       const wallet = (profileResponse.data as any).wallet;
+
+      // Extract virtual accounts safely
+      let accounts: VirtualAccount[] = [];
+      const accountsData = accountsRes.data as any;
+      if (Array.isArray(accountsData)) {
+        accounts = accountsData;
+      } else if (accountsData?.data && Array.isArray(accountsData.data)) {
+        accounts = accountsData.data;
+      }
 
       setDashboardData({
         user: {
@@ -116,14 +150,15 @@ const DashboardScreen: React.FC = () => {
           total_spent: parseFloat(wallet?.total_spent || 0),
           currency: wallet?.currency || 'NGN',
         },
-        recentTransactions: transactionsResponse.success
-          ? (transactionsResponse.data as any).data.transactions.slice(0, 5)
+        virtualAccounts: accounts,
+        recentTransactions: transactionsRes.success
+          ? (transactionsRes.data as any).data.transactions.slice(0, 5)
           : [],
-        notifications: notificationsResponse.success
-          ? (notificationsResponse.data as any).notifications.slice(0, 3)
+        notifications: notificationsRes.success
+          ? (notificationsRes.data as any).notifications.slice(0, 3)
           : [],
-        unreadNotificationsCount: unreadCountResponse.success
-          ? (unreadCountResponse.data as any).count
+        unreadNotificationsCount: unreadCountRes.success
+          ? (unreadCountRes.data as any).count
           : 0,
       });
     } catch (err: any) {
@@ -135,13 +170,42 @@ const DashboardScreen: React.FC = () => {
     }
   };
 
+  const kycNavigated = useRef(false);
+
   useEffect(() => {
+    if (session.user?.kyc_required && session.user?.kyc_status === 'not_started' && !kycNavigated.current) {
+      console.log('[Dashboard] KYC required. Navigating...');
+      kycNavigated.current = true;
+      navigation.navigate('KYC', { user: session.user });
+      return;
+    }
     fetchDashboardData();
-  }, []);
+  }, [session.user]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchDashboardData();
+  };
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await Clipboard.setString(text);
+      setCopyingAccount(label);
+      setTimeout(() => setCopyingAccount(null), 2000);
+      setAlert({
+        visible: true,
+        title: 'Copied',
+        message: `${label} copied to clipboard!`,
+        type: 'success',
+      });
+    } catch (error) {
+      setAlert({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to copy to clipboard',
+        type: 'error',
+      });
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -155,54 +219,30 @@ const DashboardScreen: React.FC = () => {
 
   const getTransactionIcon = (type: string, serviceType?: string) => {
     switch (serviceType?.toLowerCase()) {
-      case 'airtime':
-        return 'phone-portrait';
-      case 'data':
-        return 'wifi';
-      case 'electricity':
-        return 'flash';
-      case 'cable':
-        return 'tv';
-      case 'transfer':
-        return 'swap-horizontal';
-      default:
-        return type === 'credit' ? 'add-circle' : 'remove-circle';
+      case 'airtime': return 'phone-portrait';
+      case 'data': return 'wifi';
+      case 'electricity': return 'flash';
+      case 'cable': return 'tv';
+      case 'transfer': return 'swap-horizontal';
+      default: return type === 'credit' ? 'add-circle' : 'remove-circle';
     }
   };
 
   const getTransactionColor = (type: string) => {
-    return type === 'credit' ? '#047603' : type === 'wallet_funding' ? '#047603' : type === 'debit' ? '#ef4444' : '#ef4444';
+    return type === 'credit' || type === 'wallet_funding' ? '#10B981' : '#EF4444';
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return 'U';
+    const names = name.split(' ');
+    return names.length > 1 ? `${names[0][0]}${names[1][0]}`.toUpperCase() : names[0][0].toUpperCase();
   };
 
   const quickActions = [
-    {
-      id: 'fund',
-      title: 'Fund Wallet',
-      icon: 'wallet',
-      color: theme.primary,
-      onPress: () => navigation.navigate('FundWallet'),
-    },
-    {
-      id: 'send',
-      title: 'Send Money',
-      icon: 'swap-horizontal',
-      color: '#047603',
-      onPress: () => navigation.navigate('Wallet'),
-    },
-    {
-      id: 'topup',
-      title: 'Top Up',
-      icon: 'phone-portrait',
-      color: '#047603',
-      onPress: () => navigation.navigate('Airtime'),
-    },
-    {
-      id: 'bills',
-      title: 'Pay Bills',
-      icon: 'flash',
-      color: '#047603',
-      onPress: () => navigation.navigate('Electricity'),
-    },
+    { id: 'fund', title: 'Fund', icon: 'wallet', color: theme.primary, onPress: () => navigation.navigate('FundWallet') },
+    { id: 'send', title: 'Send', icon: 'swap-horizontal', color: '#10B981', onPress: () => navigation.navigate('Wallet') },
+    { id: 'topup', title: 'Top Up', icon: 'phone-portrait', color: '#3B82F6', onPress: () => navigation.navigate('Airtime') },
+    { id: 'bills', title: 'Bills', icon: 'flash', color: '#F59E0B', onPress: () => navigation.navigate('Electricity') },
   ];
 
   const services = [
@@ -214,38 +254,38 @@ const DashboardScreen: React.FC = () => {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          { backgroundColor: theme.primary, paddingBottom: 20 },
-        ]}
-      >
+      {/* Header Profile Section */}
+      <View style={[styles.header, { backgroundColor: theme.primary }]}>
         <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.greeting}>
-              Welcome back, {session.user?.full_name?.split(' ')[0] || 'User'}!
-            </Text>
-            <Text style={styles.subGreeting}>
-              {new Date().toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric',
-              })}
-            </Text>
+          <View style={styles.headerProfileRow}>
+            <View style={styles.avatarContainer}>
+              {dashboardData?.user?.avatar_url ? (
+                <Image source={{ uri: dashboardData.user.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <View style={[styles.avatarPlaceholder, { backgroundColor: theme.background + '40' }]}>
+                  <Text style={styles.avatarInitials}>
+                    {getInitials(dashboardData?.user?.full_name || session.user?.full_name || 'User')}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.headerLeft}>
+              <Text style={styles.greeting}>
+                Hi, {dashboardData?.user?.full_name?.split(' ')[0] || session.user?.full_name?.split(' ')[0] || 'User'} 👋
+              </Text>
+              <Text style={styles.subGreeting}>
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </Text>
+            </View>
           </View>
+
           <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={styles.notificationButton}
-              onPress={() => navigation.navigate('Notifications')}
-            >
-              <Ionicons name="notifications" size={24} color="white" />
+            <TouchableOpacity style={styles.notificationButton} onPress={() => navigation.navigate('Notifications')}>
+              <Ionicons name="notifications-outline" size={26} color="white" />
               {dashboardData && dashboardData.unreadNotificationsCount > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.badgeText}>
-                    {dashboardData.unreadNotificationsCount > 99
-                      ? '99+'
-                      : dashboardData.unreadNotificationsCount}
+                    {dashboardData.unreadNotificationsCount > 99 ? '99+' : dashboardData.unreadNotificationsCount}
                   </Text>
                 </View>
               )}
@@ -258,114 +298,135 @@ const DashboardScreen: React.FC = () => {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 80 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.primary}
-          />
-        }
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
-
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.primary} />
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>
-            <Text style={[styles.errorText, { color: theme.text }]}>
-              {error}
-            </Text>
-            <TouchableOpacity
-              style={[styles.retryButton, { backgroundColor: theme.primary }]}
-              onPress={fetchDashboardData}
-            >
-              <Text style={styles.retryText}>Retry</Text>
+            <Ionicons name="alert-circle-outline" size={48} color={theme.textSecondary} style={{ marginBottom: 16 }} />
+            <Text style={[styles.errorText, { color: theme.text }]}>{error}</Text>
+            <TouchableOpacity style={[styles.retryButton, { backgroundColor: theme.primary }]} onPress={fetchDashboardData}>
+              <Text style={styles.retryText}>Try Again</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={{ flex: 1, paddingHorizontal: 16 }}>
-            {/* Balance Card */}
-            {/* Announcements banner */}
+          <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
             <AnnouncementsBanner />
 
+            {/* Main Balance Card */}
             <LinearGradient
-              colors={[theme.primary, theme.primary + 'DD']}
+              colors={[theme.primary, theme.primary + 'E6']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={styles.balanceCard}
             >
               <View style={styles.balanceHeader}>
                 <Text style={styles.balanceLabel}>Total Balance</Text>
-                <TouchableOpacity onPress={() => setShowBalance(!showBalance)}>
-                  <Ionicons
-                    name={showBalance ? 'eye' : 'eye-off'}
-                    size={24}
-                    color="white"
-                  />
+                <TouchableOpacity onPress={() => setShowBalance(!showBalance)} style={styles.eyeIconWrapper}>
+                  <Ionicons name={showBalance ? 'eye-outline' : 'eye-off-outline'} size={20} color="white" />
                 </TouchableOpacity>
               </View>
               <Text style={styles.balanceAmount}>
-                {showBalance
-                  ? formatCurrency(dashboardData?.wallet?.balance || 0)
-                  : '****'}
+                {showBalance ? formatCurrency(dashboardData?.wallet?.balance || 0) : '****'}
               </Text>
+
+              <View style={styles.balanceDetailsDivider} />
+
               <View style={styles.balanceDetails}>
-                <Text style={styles.balanceDetail}>
-                  Available: {formatCurrency((dashboardData?.wallet?.balance || 0) - (dashboardData?.wallet?.locked_balance || 0))}
-                </Text>
-                {(dashboardData?.wallet?.locked_balance || 0) > 0 && (
-                  <Text style={styles.balanceDetail}>
-                    Locked: {formatCurrency(dashboardData?.wallet?.locked_balance || 0)}
+                <View>
+                  <Text style={styles.balanceDetailLabel}>Available</Text>
+                  <Text style={styles.balanceDetailValue}>
+                    {formatCurrency((dashboardData?.wallet?.balance || 0) - (dashboardData?.wallet?.locked_balance || 0))}
                   </Text>
+                </View>
+                {(dashboardData?.wallet?.locked_balance || 0) > 0 && (
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.balanceDetailLabel}>Locked Funds</Text>
+                    <Text style={styles.balanceDetailValue}>
+                      {formatCurrency(dashboardData?.wallet?.locked_balance || 0)}
+                    </Text>
+                  </View>
                 )}
               </View>
             </LinearGradient>
 
-            {/* Quick Actions */}
-            <View style={styles.quickActionsContainer}>
+            {/* Unified Quick Actions Surface */}
+            <View style={[styles.unifiedActionsContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {quickActions.map((action) => (
-                <TouchableOpacity
-                  key={action.id}
-                  style={[
-                    styles.actionButton,
-                    { backgroundColor: action.color },
-                  ]}
-                  onPress={action.onPress}
-                >
-                  <Ionicons name={action.icon as any} size={24} color="white" />
-                  <Text style={styles.actionLabel}>{action.title}</Text>
+                <TouchableOpacity key={action.id} style={styles.unifiedActionBtn} onPress={action.onPress}>
+                  <View style={[styles.actionIconWrapper, { backgroundColor: action.color + '15' }]}>
+                    <Ionicons name={action.icon as any} size={24} color={action.color} />
+                  </View>
+                  <Text style={[styles.unifiedActionLabel, { color: theme.text }]}>{action.title}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
+            {/* Virtual Accounts Horizontal Scroll */}
+            {dashboardData?.virtualAccounts && dashboardData.virtualAccounts.length > 0 && (
+              <View style={styles.vaSection}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Receiving Accounts</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.vaScrollContainer}
+                  snapToInterval={vaCardWidth + 16}
+                  decelerationRate="fast"
+                >
+                  {dashboardData.virtualAccounts.map((account) => (
+                    <View key={account.id} style={[styles.vaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                      <View style={styles.vaCardTop}>
+                        <Text style={[styles.vaBankName, { color: theme.textSecondary }]}>{account.bank_name}</Text>
+                        <View style={[styles.vaStatusBadge, { backgroundColor: account.status === 'active' ? '#10B98120' : '#F59E0B20' }]}>
+                          <Text style={[styles.vaStatusText, { color: account.status === 'active' ? '#10B981' : '#F59E0B' }]}>
+                            {account.status}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.vaNumberRow}>
+                        <Text style={[styles.vaAccountNumber, { color: theme.text }]}>{account.account_number}</Text>
+                        <TouchableOpacity
+                          style={[styles.vaCopyBtn, { backgroundColor: theme.primary + '15' }]}
+                          onPress={() => copyToClipboard(account.account_number, 'Account Number')}
+                        >
+                          <Ionicons
+                            name={copyingAccount === 'Account Number' ? "checkmark" : "copy-outline"}
+                            size={18}
+                            color={theme.primary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={[styles.vaAccountName, { color: theme.textSecondary }]}>{account.account_name}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             {/* Services Grid */}
             <View style={styles.servicesSection}>
               <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                  Services
-                </Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Services</Text>
                 <TouchableOpacity onPress={() => navigation.navigate('Services')}>
-                  <Text style={[styles.viewAllText, { color: theme.primary }]}>
-                    View All
-                  </Text>
+                  <Text style={[styles.viewAllText, { color: theme.primary }]}>View All</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.servicesGrid}>
                 {services.map((service) => (
                   <TouchableOpacity
                     key={service.id}
-                    style={[
-                      styles.serviceCard,
-                      {
-                        backgroundColor: theme.surface,
-                        borderColor: theme.border,
-                      },
-                    ]}
+                    style={[styles.serviceCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
                     onPress={() => navigation.navigate('Services')}
                   >
-                    <Ionicons name={service.icon} size={32} color={theme.primary} style={styles.serviceIcon} />
-                    <Text style={[styles.serviceName, { color: theme.text }]}>
-                      {service.name}
-                    </Text>
+                    <View style={[styles.serviceIconContainer, { backgroundColor: theme.primary + '10' }]}>
+                      <Ionicons name={service.icon} size={26} color={theme.primary} />
+                    </View>
+                    <Text style={[styles.serviceName, { color: theme.text }]}>{service.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -374,34 +435,16 @@ const DashboardScreen: React.FC = () => {
             {/* Recent Transactions */}
             {dashboardData?.recentTransactions && dashboardData.recentTransactions.length > 0 && (
               <View style={styles.transactionsSection}>
-                <View style={styles.transactionsHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                    Recent Transactions
-                  </Text>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Transactions</Text>
                   <TouchableOpacity onPress={() => navigation.navigate('Transactions')}>
-                    <Text style={[styles.viewAllText, { color: theme.primary }]}>
-                      View All
-                    </Text>
+                    <Text style={[styles.viewAllText, { color: theme.primary }]}>View All</Text>
                   </TouchableOpacity>
                 </View>
 
                 {dashboardData.recentTransactions.map((tx) => (
-                  <View
-                    key={tx.id}
-                    style={[
-                      styles.transactionItem,
-                      {
-                        backgroundColor: theme.surface,
-                        borderColor: theme.border,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.txIconContainer,
-                        { backgroundColor: getTransactionColor(tx.transaction_type) + '20' },
-                      ]}
-                    >
+                  <View key={tx.id} style={[styles.transactionItem, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <View style={[styles.txIconContainer, { backgroundColor: getTransactionColor(tx.transaction_type) + '15' }]}>
                       <Ionicons
                         name={getTransactionIcon(tx.transaction_type, tx.service_type)}
                         size={20}
@@ -410,30 +453,21 @@ const DashboardScreen: React.FC = () => {
                     </View>
 
                     <View style={styles.txDetails}>
-                      <Text style={[styles.txDescription, { color: theme.text }]}>
+                      <Text style={[styles.txDescription, { color: theme.text }]} numberOfLines={1}>
                         {tx.service_type || tx.transaction_type}
                       </Text>
-                      <Text
-                        style={[
-                          styles.txDate,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        {new Date(tx.created_at).toLocaleDateString()}
+                      <Text style={[styles.txDate, { color: theme.textSecondary }]}>
+                        {new Date(tx.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </View>
 
-                    <Text
-                      style={[
-                        styles.txAmount,
-                        {
-                          color: getTransactionColor(tx.transaction_type),
-                        },
-                      ]}
-                    >
-                      {tx.transaction_type === 'credit' ? '+' : tx.transaction_type === 'wallet_funding' ? '+' : '-'}
-                      {formatCurrency(tx.amount)}
-                    </Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={[styles.txAmount, { color: getTransactionColor(tx.transaction_type) }]}>
+                        {tx.transaction_type === 'credit' || tx.transaction_type === 'wallet_funding' ? '+' : '-'}
+                        {formatCurrency(tx.amount)}
+                      </Text>
+                      <Text style={[styles.txStatus, { color: theme.textSecondary }]}>{tx.status}</Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -442,76 +476,93 @@ const DashboardScreen: React.FC = () => {
             {/* Recent Notifications */}
             {dashboardData?.notifications && dashboardData.notifications.length > 0 && (
               <View style={styles.notificationsSection}>
-                <View style={styles.transactionsHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                    Recent Notifications
-                  </Text>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Notifications</Text>
                   <TouchableOpacity onPress={() => navigation.navigate('Notifications')}>
-                    <Text style={[styles.viewAllText, { color: theme.primary }]}>
-                      View All
-                    </Text>
+                    <Text style={[styles.viewAllText, { color: theme.primary }]}>View All</Text>
                   </TouchableOpacity>
                 </View>
 
                 {dashboardData.notifications.map((notification) => (
-                  <View
-                    key={notification.id}
-                    style={[
-                      styles.notificationItem,
-                      {
-                        backgroundColor: theme.surface,
-                        borderColor: theme.border,
-                      },
-                    ]}
-                  >
+                  <View key={notification.id} style={[styles.notificationItem, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <View style={styles.notificationContent}>
-                      <Text style={[styles.notificationTitle, { color: theme.text }]}>
-                        {notification.title}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.notificationMessage,
-                          { color: theme.textSecondary },
-                        ]}
-                        numberOfLines={2}
-                      >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                        <Text style={[styles.notificationTitle, { color: theme.text }]} numberOfLines={1}>
+                          {notification.title}
+                        </Text>
+                        {!notification.is_read && (
+                          <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />
+                        )}
+                      </View>
+                      <Text style={[styles.notificationMessage, { color: theme.textSecondary }]} numberOfLines={2}>
                         {notification.message}
                       </Text>
-                      <Text
-                        style={[
-                          styles.notificationDate,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
+                      <Text style={[styles.notificationDate, { color: theme.textSecondary }]}>
                         {new Date(notification.created_at).toLocaleDateString()}
                       </Text>
                     </View>
-                    {!notification.is_read && (
-                      <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />
-                    )}
                   </View>
                 ))}
               </View>
             )}
 
-            <View style={{ height: 120 }} />
+            <View style={{ height: 40 }} />
           </View>
         )}
       </ScrollView>
+
+      <CustomAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        onClose={() => setAlert({ ...alert, visible: false })}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   header: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    paddingTop: 54,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingTop: 50,
+    alignItems: 'center',
+  },
+  headerProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatarContainer: {
+    marginRight: 12,
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  avatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  avatarInitials: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   headerLeft: {
     flex: 1,
@@ -519,58 +570,63 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
   },
   notificationButton: {
     position: 'relative',
-    padding: 8,
+    padding: 4,
   },
   notificationBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
+    top: 0,
+    right: 0,
     backgroundColor: '#ef4444',
     borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    minWidth: 18,
+    height: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
   },
   badgeText: {
     color: 'white',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
   },
   greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
     color: 'white',
     marginBottom: 4,
   },
   subGreeting: {
-    fontSize: 14,
+    fontSize: 13,
     color: 'rgba(255, 255, 255, 0.8)',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 100,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    marginTop: 80,
   },
   errorText: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+    lineHeight: 24,
   },
   retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 12,
   },
   retryText: {
     color: 'white',
@@ -578,81 +634,154 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   balanceCard: {
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
-    marginTop: -6,
-    marginBottom: 24,
+    marginTop: -4,
+    marginBottom: 20,
     elevation: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowRadius: 10,
   },
   balanceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   balanceLabel: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.85)',
     fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  eyeIconWrapper: {
+    padding: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
   },
   balanceAmount: {
-    fontSize: 36,
-    fontWeight: 'bold',
+    fontSize: 38,
+    fontWeight: '800',
     color: 'white',
-    marginBottom: 12,
+    letterSpacing: -1,
+  },
+  balanceDetailsDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    marginVertical: 16,
   },
   balanceDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  balanceDetail: {
+  balanceDetailLabel: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 4,
   },
-  quickActionsContainer: {
+  balanceDetailValue: {
+    fontSize: 15,
+    color: 'white',
+    fontWeight: '600',
+  },
+  unifiedActionsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 28,
-    marginLeft: -16,
-    marginRight: -16,
-    paddingHorizontal: 4,
-  },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: 6,
-    paddingVertical: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
+    justifyContent: 'space-around',
+    paddingVertical: 18,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
   },
-  actionLabel: {
-    color: 'white',
-    fontSize: 11,
+  unifiedActionBtn: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  actionIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  unifiedActionLabel: {
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 8,
-    textAlign: 'center',
+  },
+  vaSection: {
+    marginBottom: 24,
+  },
+  vaScrollContainer: {
+    paddingRight: 16,
+    gap: 12,
+  },
+  vaCard: {
+    width: vaCardWidth,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  vaCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  vaBankName: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  vaStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  vaStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  vaNumberRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  vaAccountNumber: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  vaCopyBtn: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  vaAccountName: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   servicesSection: {
-    marginBottom: 28,
+    marginBottom: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-end',
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   viewAllText: {
     fontSize: 14,
@@ -662,103 +791,101 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    gap: 12,
   },
   serviceCard: {
     width: cardWidth,
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 12,
+    alignItems: 'center',
+  },
+  serviceIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  serviceIcon: {
-    fontSize: 32,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   serviceName: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    textAlign: 'center',
   },
   transactionsSection: {
-    marginBottom: 28,
-  },
-  transactionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 24,
   },
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    borderRadius: 16,
     borderWidth: 1,
   },
   txIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   txDetails: {
     flex: 1,
+    marginRight: 8,
   },
   txDescription: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   txDate: {
     fontSize: 12,
   },
   txAmount: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  txStatus: {
+    fontSize: 11,
+    textTransform: 'capitalize',
+    fontWeight: '500',
   },
   notificationsSection: {
     marginBottom: 20,
   },
   notificationItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    borderRadius: 16,
     borderWidth: 1,
   },
   notificationContent: {
     flex: 1,
   },
   notificationTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    marginBottom: 4,
-  },
-  notificationMessage: {
-    fontSize: 13,
-    marginBottom: 4,
-    lineHeight: 18,
-  },
-  notificationDate: {
-    fontSize: 11,
+    flex: 1,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginTop: 6,
     marginLeft: 8,
+  },
+  notificationMessage: {
+    fontSize: 13,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  notificationDate: {
+    fontSize: 11,
+    fontWeight: '500',
   },
 });
 
 export default DashboardScreen;
-

@@ -1,6 +1,7 @@
 // src/screens/SignupScreen.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { AccessibilityInfo, findNodeHandle, Modal, Pressable, SafeAreaView } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, Modal, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -664,35 +665,35 @@ const SignupScreen: React.FC = () => {
           const createdUser = body.user
           const pending = createdUser
             ? {
-                customerId: createdUser.id,
-                email: createdUser.email,
-                firstName: createdUser.firstName || createdUser.first_name || newUserForm.firstName,
-                lastName: createdUser.lastName || createdUser.last_name || newUserForm.lastName,
-                phone: (createdUser.mobile || newUserForm.mobile) && (() => {
-                  const raw = String(createdUser.mobile || newUserForm.mobile || '').trim()
-                  if (raw.startsWith('+')) return raw
-                  const digits = raw.replace(/\D/g, '')
-                  if (digits.startsWith('0')) return `+234${digits.substring(1)}`
-                  if (digits.startsWith('234')) return `+${digits}`
-                  return `+234${digits}`
-                })(),
-                isNewUser: true,
-              }
+              customerId: createdUser.id,
+              email: createdUser.email,
+              firstName: createdUser.firstName || createdUser.first_name || newUserForm.firstName,
+              lastName: createdUser.lastName || createdUser.last_name || newUserForm.lastName,
+              phone: (createdUser.mobile || newUserForm.mobile) && (() => {
+                const raw = String(createdUser.mobile || newUserForm.mobile || '').trim()
+                if (raw.startsWith('+')) return raw
+                const digits = raw.replace(/\D/g, '')
+                if (digits.startsWith('0')) return `+234${digits.substring(1)}`
+                if (digits.startsWith('234')) return `+${digits}`
+                return `+234${digits}`
+              })(),
+              isNewUser: true,
+            }
             : {
-                customerId: null,
-                email: newUserForm.email,
-                firstName: newUserForm.firstName,
-                lastName: newUserForm.lastName,
-                phone: (newUserForm.mobile) && (() => {
-                  const raw = String(newUserForm.mobile || '').trim()
-                  if (raw.startsWith('+')) return raw
-                  const digits = raw.replace(/\D/g, '')
-                  if (digits.startsWith('0')) return `+234${digits.substring(1)}`
-                  if (digits.startsWith('234')) return `+${digits}`
-                  return `+234${digits}`
-                })(),
-                isNewUser: true,
-              }
+              customerId: null,
+              email: newUserForm.email,
+              firstName: newUserForm.firstName,
+              lastName: newUserForm.lastName,
+              phone: (newUserForm.mobile) && (() => {
+                const raw = String(newUserForm.mobile || '').trim()
+                if (raw.startsWith('+')) return raw
+                const digits = raw.replace(/\D/g, '')
+                if (digits.startsWith('0')) return `+234${digits.substring(1)}`
+                if (digits.startsWith('234')) return `+${digits}`
+                return `+234${digits}`
+              })(),
+              isNewUser: true,
+            }
 
           await AsyncStorage.setItem('kycPendingCustomer', JSON.stringify(pending))
         } catch (e) { console.warn('Failed to persist pending KYC customer', e) }
@@ -983,7 +984,7 @@ const SignupScreen: React.FC = () => {
               {isLoading ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
-                <Text style={styles.primaryButtonText}>Check Email →</Text>
+                <Text style={styles.primaryButtonText}>Check Email <Ionicons name="arrow-forward" size={20} color={theme.text} /></Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1110,14 +1111,17 @@ const SignupScreen: React.FC = () => {
                 style={[styles.secondaryButton, { borderColor: theme.border }]}
                 onPress={() => setStep(1)}
               >
-                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>← Back</Text>
+                {/* <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}> */}
+
+                {/* </TouchableOpacity> */}
+                <Text style={[styles.secondaryButtonText, { color: theme.text }]}><Ionicons name="arrow-back" size={20} color={theme.text} /> Back</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.primaryButton, { backgroundColor: theme.primary }]}
                 onPress={handleNextStep}
               >
-                <Text style={styles.primaryButtonText}>Next →</Text>
+                <Text style={styles.primaryButtonText}>Next <Ionicons name="arrow-forward" size={20} color={theme.text} /></Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1225,12 +1229,12 @@ const SignupScreen: React.FC = () => {
                 </View>
                 <Text style={[styles.termsText, { color: theme.textSecondary }]}>
                   I agree to the{' '}
-                    <Text
-                      style={[styles.linkText, { color: theme.primary }]}
-                      onPress={() => setShowTosModal(true)}
-                    >
-                      Terms of Service
-                    </Text>
+                  <Text
+                    style={[styles.linkText, { color: theme.primary }]}
+                    onPress={() => setShowTosModal(true)}
+                  >
+                    Terms of Service
+                  </Text>
                   {' '}and{' '}
                   <Text
                     style={[styles.linkText, { color: theme.primary }]}
@@ -1315,7 +1319,7 @@ const SignupScreen: React.FC = () => {
               {isLoading ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
-                <Text style={styles.primaryButtonText}>Search Account 🔍</Text>
+                <Text style={styles.primaryButtonText}>Search Account <Ionicons name="search" size={16} color={theme.text} /></Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1379,7 +1383,7 @@ const SignupScreen: React.FC = () => {
             </View>
 
             <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: theme.border }]}
+              style={[styles.singleSecondaryButton, { borderColor: theme.border }]}
               onPress={() => setVerificationField(verificationField === 'phone' ? 'dob' : 'phone')}
             >
               <Text style={[styles.secondaryButtonText, { color: theme.text }]}>
@@ -1392,7 +1396,7 @@ const SignupScreen: React.FC = () => {
                 style={[styles.secondaryButton, { borderColor: theme.border }]}
                 onPress={() => setStep(1)}
               >
-                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>← Back</Text>
+                <Text style={[styles.secondaryButtonText, { color: theme.text }]}><Ionicons name="arrow-back" size={24} color={theme.text} /> Back</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1407,7 +1411,7 @@ const SignupScreen: React.FC = () => {
                 {isLoading ? (
                   <ActivityIndicator color="#ffffff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Verify →</Text>
+                  <Text style={styles.primaryButtonText}>Verify <Ionicons name="arrow-forward" size={24} color={theme.text} /></Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1523,12 +1527,12 @@ const SignupScreen: React.FC = () => {
                 </View>
                 <Text style={[styles.termsText, { color: theme.textSecondary }]}>
                   I agree to the{' '}
-                    <Text
-                      style={[styles.linkText, { color: theme.primary }]}
-                      onPress={() => setShowTosModal(true)}
-                    >
-                      Terms of Service
-                    </Text>
+                  <Text
+                    style={[styles.linkText, { color: theme.primary }]}
+                    onPress={() => setShowTosModal(true)}
+                  >
+                    Terms of Service
+                  </Text>
                   {' '}and{' '}
                   <Text
                     style={[styles.linkText, { color: theme.primary }]}
@@ -1662,7 +1666,7 @@ const SignupScreen: React.FC = () => {
           <Modal visible={showTosModal} animationType="slide" onRequestClose={() => setShowTosModal(false)}>
             <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
               <ScrollView contentContainerStyle={{ padding: 20 }}>
-                <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12, color: theme.text}}>Terms of Service</Text>
+                <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12, color: theme.text }}>Terms of Service</Text>
                 <Text style={{ fontSize: 14, lineHeight: 22, marginBottom: 12, color: theme.text }}>
                   {termsText}
                 </Text>

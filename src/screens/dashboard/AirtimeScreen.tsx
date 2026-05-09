@@ -1,5 +1,5 @@
-﻿// src/screens/dashboard/AirtimeScreen.tsx
-import React, { useState } from 'react';
+// src/screens/dashboard/AirtimeScreen.tsx
+import React, { useState, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -7,21 +7,32 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
-  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import PhoneInputWithContacts from '../../components/PhoneInputWithContacts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
-import ThemeToggle from '../../components/ThemeToggle';
 import { useNavigation } from '@react-navigation/native';
+import CustomAlert from '../../components/CustomAlert';
 
 const NETWORKS = [
   { id: 'mtn', name: 'MTN', color: '#FFC107' },
   { id: 'airtel', name: 'Airtel', color: '#FF4444' },
   { id: 'glo', name: 'Glo', color: '#4CAF50' },
-  { id: '9mobile', name: '9Mobile', color: '#2196F3' },
+  { id: '9mobile', name: '9Mobile', color: '#01573d' },
 ];
+
+const NETWORK_PREFIXES: { [key: string]: string } = {
+  '0803': 'mtn', '0806': 'mtn', '0703': 'mtn', '0706': 'mtn', '0813': 'mtn', '0814': 'mtn', '0816': 'mtn', '0903': 'mtn', '0906': 'mtn', '0810': 'mtn', '0913': 'mtn',
+  '0802': 'airtel', '0808': 'airtel', '0701': 'airtel', '0708': 'airtel', '0812': 'airtel', '0902': 'airtel', '0907': 'airtel', '0901': 'airtel', '0911': 'airtel',
+  '0805': 'glo', '0807': 'glo', '0705': 'glo', '0815': 'glo', '0811': 'glo', '0905': 'glo',
+  '0809': '9mobile', '0817': '9mobile', '0818': '9mobile', '0909': '9mobile', '0908': '9mobile',
+};
 
 const AirtimeScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -30,18 +41,63 @@ const AirtimeScreen: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'info' | 'success' | 'error' | 'warning',
+    onConfirm: () => {},
+  });
 
-  const handlePurchase = async () => {
+  const showAlert = useCallback((title: string, message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', onConfirm?: () => void) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      onConfirm: onConfirm || (() => setAlertConfig(prev => ({ ...prev, visible: false }))),
+    });
+  }, []);
+
+  const detectNetwork = (number: string) => {
+    let cleanNumber = number.replace(/\s/g, '');
+    if (cleanNumber.startsWith('+234')) {
+      cleanNumber = '0' + cleanNumber.slice(4);
+    } else if (cleanNumber.startsWith('234')) {
+      cleanNumber = '0' + cleanNumber.slice(3);
+    }
+
+    if (cleanNumber.length >= 4) {
+      const prefix = cleanNumber.substring(0, 4);
+      const network = NETWORK_PREFIXES[prefix];
+      if (network) {
+        setSelectedNetwork(network);
+      }
+    }
+    return cleanNumber;
+  };
+
+  const handlePhoneNumberChange = (text: string) => {
+    const cleaned = detectNetwork(text);
+    setPhoneNumber(cleaned);
+  };
+
+  const handlePurchase = () => {
     if (!selectedNetwork || !phoneNumber || !amount) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
-    if (parseFloat(amount) < 50) {
-      Alert.alert('Error', 'Minimum amount is ₦50');
-      return;
-    }
+    showAlert(
+      'Confirm Purchase',
+      `You are about to purchase ₦${amount} airtime for ${phoneNumber} (${selectedNetwork.toUpperCase()}). Proceed?`,
+      'info',
+      processPurchase
+    );
+  };
 
+  const processPurchase = async () => {
     try {
       setLoading(true);
       const response = await apiClient.post('/services/airtime', {
@@ -51,118 +107,79 @@ const AirtimeScreen: React.FC = () => {
       });
 
       if (response.success) {
-        Alert.alert(
-          'Success',
-          'Airtime purchase successful!',
-          [
-            {
-              text: 'View Receipt',
-              onPress: () => navigation.navigate('Success', {
-                data: {
-                  serviceType: 'airtime',
-                  amount: parseFloat(amount),
-                  recipient: phoneNumber,
-                  network: selectedNetwork,
-                  transactionId: (response as any).transactionId || (response as any).data?.reference || `TXN_${Date.now()}`,
-                  status: (response as any).status || 'completed',
-                  timestamp: new Date().toISOString(),
-                  ...(response as any).data && { apiResponse: (response as any).data },
-                }
-              })
-            },
-            {
-              text: 'Done',
-              onPress: () => navigation.goBack(),
-              style: 'cancel'
-            }
-          ]
-        );
+        navigation.navigate('Success', {
+          data: {
+            serviceType: 'airtime',
+            amount: parseFloat(amount),
+            recipient: phoneNumber,
+            network: selectedNetwork,
+            transactionId: (response.data as any)?.transaction_id || `TXN_${Date.now()}`,
+            status: 'completed',
+            timestamp: new Date().toISOString(),
+          }
+        });
       } else {
-        Alert.alert('Error', response.error || 'Purchase failed');
+        showAlert('Error', response.error || 'Purchase failed', 'error');
       }
     } catch (error) {
-      console.error('Purchase error:', error);
-      Alert.alert('Error', 'Failed to complete purchase');
+      showAlert('No Internet', 'Please check your internet connection and try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
-        {/* Header */}
-        <LinearGradient
-          colors={[theme.primary, theme.primary + 'DD']}
-          style={styles.header}
-        >
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        {/* Fixed Header */}
+        <LinearGradient colors={[theme.primary, theme.primary + 'DD']} style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <View style={[styles.iconContainer, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-              <Ionicons name="call" size={32} color="white" />
-            </View>
+            <Ionicons name="call" size={32} color="white" />
             <Text style={styles.serviceTitle}>Buy Airtime</Text>
-            <Text style={styles.serviceDescription}>
-              Purchase airtime for MTN, Airtel, Glo, 9Mobile
-            </Text>
           </View>
         </LinearGradient>
 
-        {/* Form */}
-        <View style={styles.formContainer}>
-          <Text style={[styles.formTitle, { color: theme.text }]}>Select Network</Text>
-
+        <ScrollView 
+          style={styles.container} 
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Network Selection */}
-          <View style={styles.networkGrid}>
-            {NETWORKS.map((network) => (
+          <Text style={[styles.label, { color: theme.text, marginBottom: 12 }]}>Select Network</Text>
+          <View style={styles.networkTabs}>
+            {NETWORKS.map((n) => (
               <TouchableOpacity
-                key={network.id}
-                style={[
-                  styles.networkCard,
-                  {
-                    backgroundColor: selectedNetwork === network.id ? network.color : theme.surface,
-                    borderColor: theme.border,
-                  },
-                ]}
-                onPress={() => setSelectedNetwork(network.id)}
+                key={n.id}
+                style={[styles.networkTab, { 
+                  backgroundColor: selectedNetwork === n.id ? n.color : 'transparent',
+                  borderColor: selectedNetwork === n.id ? n.color : theme.border 
+                }]}
+                onPress={() => setSelectedNetwork(n.id)}
               >
-                <Text
-                  style={[
-                    styles.networkName,
-                    {
-                      color: selectedNetwork === network.id ? '#ffffff' : theme.text,
-                    },
-                  ]}
-                >
-                  {network.name}
+                <Text style={[styles.networkTabText, { color: selectedNetwork === n.id ? '#fff' : theme.text }]}>
+                  {n.name}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Phone Number */}
-          <View style={styles.fieldContainer}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Phone Number</Text>
-            <TextInput
-              style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
-              placeholder="08012345678"
-              placeholderTextColor={theme.textSecondary}
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              keyboardType="phone-pad"
-              maxLength={11}
-            />
-          </View>
+          <PhoneInputWithContacts
+            value={phoneNumber}
+            onChangeText={handlePhoneNumberChange}
+            onNetworkDetect={detectNetwork}
+            label="Phone Number"
+          />
 
-          {/* Amount */}
           <View style={styles.fieldContainer}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Amount (₦)</Text>
+            <Text style={[styles.label, { color: theme.text, marginBottom: 8 }]}>Amount (₦)</Text>
             <TextInput
-              style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+              style={[styles.textInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surface }]}
               placeholder="100"
               placeholderTextColor={theme.textSecondary}
               value={amount}
@@ -170,113 +187,49 @@ const AirtimeScreen: React.FC = () => {
               keyboardType="numeric"
             />
           </View>
+        </ScrollView>
 
-          {/* Purchase Button */}
+        {/* Fixed Purchase Button */}
+        <View style={[styles.footer, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
           <TouchableOpacity
-            style={[styles.purchaseButton, { backgroundColor: theme.primary }]}
+            style={[styles.purchaseButton, { backgroundColor: theme.primary }, (!amount || !phoneNumber || loading) && { opacity: 0.5 }]}
             onPress={handlePurchase}
-            disabled={loading}
+            disabled={!amount || !phoneNumber || loading}
           >
-            {loading ? (
-              <Text style={styles.purchaseText}>Processing...</Text>
-            ) : (
-              <Text style={styles.purchaseText}>Purchase Airtime</Text>
-            )}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.purchaseText}>Purchase Airtime</Text>}
           </TouchableOpacity>
         </View>
-      </ScrollView>
-    );
+
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+          onConfirm={alertConfig.onConfirm}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 };
 
 const styles = StyleSheet.create({
-  header: {
-    paddingTop: 60,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 10,
-  },
-  headerContent: {
-    alignItems: 'center',
-  },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  serviceTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  serviceDescription: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  formContainer: {
-    padding: 20,
-  },
-  formTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  networkGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
-  },
-  networkCard: {
-    flex: 1,
-    minWidth: '45%',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  networkName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  fieldContainer: {
-    marginBottom: 20,
-  },
-  fieldLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  purchaseButton: {
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  purchaseText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  safeArea: { flex: 1 },
+  header: { paddingTop: 40, paddingBottom: 20, paddingHorizontal: 20, alignItems: 'center', height: 140, justifyContent: 'center' },
+  backButton: { position: 'absolute', left: 20, top: 50 },
+  headerContent: { alignItems: 'center', gap: 5 },
+  serviceTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
+  container: { flex: 1 },
+  scrollContent: { padding: 20, paddingBottom: 100 },
+  networkTabs: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  networkTab: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
+  networkTabText: { fontWeight: 'bold' },
+  label: { fontSize: 16, fontWeight: '600' },
+  fieldContainer: { marginTop: 20 },
+  textInput: { height: 55, borderWidth: 1, borderRadius: 12, paddingHorizontal: 15, fontSize: 16 },
+  footer: { padding: 20, paddingBottom: Platform.OS === 'ios' ? 30 : 20 },
+  purchaseButton: { height: 55, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  purchaseText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 });
 
 export default AirtimeScreen;

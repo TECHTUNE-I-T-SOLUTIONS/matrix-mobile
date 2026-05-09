@@ -28,8 +28,9 @@ export type RootStackParamList = {
   TermsOfService: undefined;
   PrivacyPolicy: undefined;
   PinSettings: undefined;
-  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; meterType?: string; quantity?: number } };
+  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; meterType?: string; quantity?: number; status?: string; timestamp?: string } };
   Referrals: undefined;
+  TransactionDetails: { transaction: any };
 };
 
 export type AuthStackParamList = {
@@ -74,7 +75,8 @@ export type DashboardStackParamList = {
   PrivacyPolicy: undefined;
   PinSettings: undefined;
   Referrals: undefined;
-  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; meterType?: string; quantity?: number } };
+  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; meterType?: string; quantity?: number; status?: string; timestamp?: string } };
+  TransactionDetails: { transaction: any };
 };
 
 declare global {

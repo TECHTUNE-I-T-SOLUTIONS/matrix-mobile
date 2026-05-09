@@ -3,6 +3,8 @@ import { AppState, AppStateStatus, Alert } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Application from 'expo-application'
 
+import { isUpdateAvailable } from '../utils/versionUtils'
+
 const AUTO_CHECK_KEY = 'auto_check_updates'
 const RELEASES_URL = process.env.RELEASES_URL || process.env.EXPO_PUBLIC_RELEASES_URL || 'https://api.github.com/repos/TECHTUNE-I-T-SOLUTIONS/matrix-mobile/releases/latest'
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.EXPO_PUBLIC_GITHUB_TOKEN || ''
@@ -15,9 +17,8 @@ export async function checkForUpdate(): Promise<boolean> {
     if (!res.ok) return false
     const data = await res.json()
     const tag = data.tag_name || data.name
-    const current = Application.nativeApplicationVersion || Application.nativeBuildVersion || '1.0.0'
-    if (tag && tag !== current) {
-      // Do not immediately interrupt; return true for caller to decide how to prompt
+    
+    if (tag && isUpdateAvailable(tag)) {
       return true
     }
   } catch (err) {

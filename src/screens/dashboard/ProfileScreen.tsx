@@ -1,4 +1,4 @@
-﻿// src/screens/dashboard/ProfileScreen.tsx
+// src/screens/dashboard/ProfileScreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -24,6 +24,7 @@ import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
 import CustomAlert from '../../components/CustomAlert';
 import { useNavigation } from '@react-navigation/native';
+import { isUpdateAvailable } from '../../utils/versionUtils';
 
 interface ProfileData {
   id: string;
@@ -148,9 +149,9 @@ const ProfileScreen: React.FC = () => {
         data = await res.json()
       }
       setLatestRelease(data)
-      const currentVersion = Application.nativeApplicationVersion || Application.nativeBuildVersion || '1.0.0'
       const tag = data.tag_name || data.name
-      if (tag && tag !== currentVersion) {
+      
+      if (tag && isUpdateAvailable(tag)) {
         setUpdateAvailable(true)
         return true
       } else {

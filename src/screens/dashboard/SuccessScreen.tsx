@@ -1,4 +1,4 @@
-﻿// src/screens/dashboard/SuccessScreen.tsx
+// src/screens/dashboard/SuccessScreen.tsx
 import React, { useRef } from 'react';
 import {
   View,
@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ViewShot from 'react-native-view-shot';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useShareReceipt } from '../../hooks/useShareReceipt';
+import ShareReceiptTemplate from '../../components/ShareReceiptTemplate';
 
 type ServiceType = 'data' | 'airtime' | 'cabletv' | 'electricity' | 'exampins' | 'international' | 'internet' | 'betting';
 
@@ -40,7 +42,7 @@ const SuccessScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute<SuccessScreenRouteProp>();
   const { data } = route.params;
-  const viewShotRef = useRef<ViewShot>(null);
+  const { viewShotRef, shareReceipt } = useShareReceipt(data.transactionId);
 
   const getServiceConfig = (serviceType: ServiceType) => {
     switch (serviceType) {
@@ -187,8 +189,7 @@ const SuccessScreen: React.FC = () => {
         />
 
         {/* Success Card */}
-        <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 0.9 }}>
-          <View style={[styles.successCard, { backgroundColor: theme.surface, shadowColor: config.color }]}>
+        <View style={[styles.successCard, { backgroundColor: theme.surface, shadowColor: config.color }]}>
           {/* Success Icon */}
           <View style={[styles.iconContainer, { backgroundColor: config.color + '20' }]}>
             <Ionicons name={config.icon as any} size={48} color={config.color} />
@@ -214,7 +215,7 @@ const SuccessScreen: React.FC = () => {
             {data.status && (
               <View style={[styles.detailRow, { borderBottomColor: theme.border }]}>
                 <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Status:</Text>
-                <View style={[styles.statusBadge, { backgroundColor: data.status === 'completed' ? '#10B981' : '#F59E0B' }]}>
+                <View style={[styles.statusBadge, { backgroundColor: data.status === 'completed' || data.status === 'success' ? '#10B981' : '#F59E0B' }]}>
                   <Text style={styles.statusText}>{data.status.toUpperCase()}</Text>
                 </View>
               </View>
@@ -259,10 +260,27 @@ const SuccessScreen: React.FC = () => {
               <Ionicons name="checkmark" size={20} color="#ffffff" />
             </TouchableOpacity>
           </View>
-
-          {/* Action Buttons */}
         </View>
-        </ViewShot>
+
+        {/* Hidden Receipt Template for Sharing */}
+        <View style={styles.hiddenTemplate}>
+          <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }}>
+            <ShareReceiptTemplate 
+              transaction={{
+                serviceType: data.serviceType,
+                amount: data.amount,
+                recipient: data.recipient,
+                network: data.network,
+                status: data.status || 'completed',
+                transactionId: data.transactionId || 'N/A',
+                timestamp: data.timestamp || new Date().toISOString(),
+                meterNumber: data.meterNumber,
+                disco: data.provider,
+                plan: data.planName,
+              }} 
+            />
+          </ViewShot>
+        </View>
       </View>
     );
 };
@@ -416,6 +434,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  hiddenTemplate: {
+    position: 'absolute',
+    left: -1000, // Move off-screen
+    top: 0,
+    zIndex: -1,
+    opacity: 0,
   },
 });
 

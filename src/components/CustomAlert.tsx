@@ -24,6 +24,8 @@ interface CustomAlertProps {
     style?: 'default' | 'cancel' | 'destructive';
   }>;
   onClose?: () => void;
+  onConfirm?: () => void;
+  onCancel?: () => void;
 }
 
 const CustomAlert: React.FC<CustomAlertProps> = ({
@@ -31,9 +33,16 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   title,
   message,
   type = 'info',
-  buttons = [{ text: 'OK', onPress: () => {} }],
+  buttons,
   onClose,
+  onConfirm,
+  onCancel,
 }) => {
+  // Use either buttons array or onConfirm/onCancel props
+  const finalButtons = buttons || (onConfirm ? [
+    { text: 'Confirm', onPress: onConfirm, style: 'default' },
+    { text: 'Cancel', onPress: onCancel || (() => {}), style: 'cancel' }
+  ] : [{ text: 'OK', onPress: onClose || (() => {}), style: 'default' }]);
   const getIconColor = () => {
     switch (type) {
       case 'success':
@@ -96,7 +105,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
 
             {/* Buttons */}
             <View style={styles.buttonContainer}>
-              {buttons.map((button, index) => (
+              {finalButtons.map((button, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[

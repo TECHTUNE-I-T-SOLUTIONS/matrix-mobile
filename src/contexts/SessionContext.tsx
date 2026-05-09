@@ -156,7 +156,19 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         }),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      let data: any = null;
+      
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.error('[Login] Received non-JSON response:', text.substring(0, 200));
+        return { 
+          success: false, 
+          error: `Server returned an invalid response (${response.status})` 
+        };
+      }
 
       console.log('[Login] Response status:', response.status);
       console.log('[Login] Response data:', data);
@@ -165,7 +177,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         console.error('[Login] Backend error:', data);
         return { 
           success: false, 
-          error: data.error || data.message || 'Login failed' 
+          error: data.error || data.message || `Login failed (${response.status})` 
         };
       }
 
@@ -298,18 +310,23 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
             headers: { Authorization: `Bearer ${session.accessToken}` },
           })
           if (res.ok) {
-            const payload = await res.json()
-            if (payload?.user) {
-              const u = payload.user
-              updatedUser = {
-                ...session.user!,
-                email: u.email || session.user?.email,
-                full_name: u.full_name || session.user?.full_name,
-                phone: u.mobile || u.phone || session.user?.phone,
-                avatar_url: u.photo_url || u.avatar_url || session.user?.avatar_url,
-                kyc_status: u.kyc_verified ? 'verified' : session.user?.kyc_status,
-                kyc_required: !u.kyc_verified,
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              const payload = await res.json()
+              if (payload?.user) {
+                const u = payload.user
+                updatedUser = {
+                  ...session.user!,
+                  email: u.email || session.user?.email,
+                  full_name: u.full_name || session.user?.full_name,
+                  phone: u.mobile || u.phone || session.user?.phone,
+                  avatar_url: u.photo_url || u.avatar_url || session.user?.avatar_url,
+                  kyc_status: u.kyc_verified ? 'verified' : session.user?.kyc_status,
+                  kyc_required: !u.kyc_verified,
+                }
               }
+            } else {
+              console.warn('[SessionContext] Profile response during resume was not JSON');
             }
           }
         } catch (err) {

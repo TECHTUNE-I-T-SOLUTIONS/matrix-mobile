@@ -50,13 +50,25 @@ const AuthResumeScreen: React.FC = () => {
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.117:3000/api';
 
+      if (!session?.accessToken) {
+        console.log('[AuthResume] No access token found, signing out');
+        await signOut();
+        return;
+      }
+
       // Fetch PIN and biometric status
       const authResponse = await fetch(`${apiUrl}/auth/check-pin-status`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${session?.accessToken}`,
+          'Authorization': `Bearer ${session.accessToken}`,
         },
       });
+
+      if (authResponse.status === 401) {
+        console.log('[AuthResume] Session expired (check-pin-status), signing out');
+        await signOut();
+        return;
+      }
 
       if (authResponse.ok) {
         const authData = await authResponse.json();
@@ -68,13 +80,24 @@ const AuthResumeScreen: React.FC = () => {
       const profileResponse = await fetch(`${apiUrl}/user/profile`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${session?.accessToken}`,
+          'Authorization': `Bearer ${session.accessToken}`,
         },
       });
 
+      if (profileResponse.status === 401) {
+        console.log('[AuthResume] Session expired (profile), signing out');
+        await signOut();
+        return;
+      }
+
       if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
-        setUserProfile(profileData.user); // Extract user data from response
+        const contentType = profileResponse.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const profileData = await profileResponse.json();
+          setUserProfile(profileData.user);
+        } else {
+          console.warn('[AuthResume] Profile response is not JSON:', await profileResponse.text());
+        }
       }
     } catch (error) {
       console.error('Error checking user settings:', error);

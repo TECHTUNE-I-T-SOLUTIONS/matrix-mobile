@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { useTheme } from '../../contexts/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -156,16 +157,25 @@ const OnboardingScreen: React.FC = () => {
     }
   };
 
-  const handleNext = () => {
-    if (currentIndex < slides.length - 1) {
-      scrollTo(currentIndex + 1);
-    } else {
+  const completeOnboarding = async () => {
+    try {
+      await AsyncStorage.setItem('HAS_ONBOARDED', 'true');
+      navigation.replace('AuthChoice');
+    } catch (e) {
       navigation.replace('AuthChoice');
     }
   };
 
+  const handleNext = () => {
+    if (currentIndex < slides.length - 1) {
+      scrollTo(currentIndex + 1);
+    } else {
+      completeOnboarding();
+    }
+  };
+
   const handleSkip = () => {
-    navigation.replace('AuthChoice');
+    completeOnboarding();
   };
 
   const renderSlide = ({ item }: { item: OnboardingSlide }) => (

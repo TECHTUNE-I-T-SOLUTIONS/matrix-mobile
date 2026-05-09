@@ -15,6 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../contexts/ThemeContext';
 import { useSession } from '../contexts/SessionContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -67,28 +68,27 @@ const SplashScreen: React.FC = () => {
     ]).start();
 
     // Determine where to navigate based on session state
-    const navigateAfterSplash = () => {
+    const navigateAfterSplash = async () => {
       if (session.isLoading) {
-        // Still loading, wait a bit more
         setTimeout(navigateAfterSplash, 500);
         return;
       }
 
-      const targetRoute: keyof RootStackParamList = session.requiresResumeAuth
-        ? 'AuthResume'
-        : session.isAuthenticated
-          ? 'Main'
-          : 'Auth';
-
-      const params = targetRoute === 'Auth' ? { screen: 'AuthChoice' } : undefined;
-
-      console.log('[SplashScreen] Navigating to:', targetRoute, 'Session state:', {
-        isAuthenticated: session.isAuthenticated,
-        requiresResumeAuth: session.requiresResumeAuth,
-        isLoading: session.isLoading,
-      });
-
-      navigation.replace(targetRoute, params as any);
+      try {
+        const hasOnboarded = await AsyncStorage.getItem('HAS_ONBOARDED');
+        
+        if (session.requiresResumeAuth) {
+          navigation.replace('AuthResume');
+        } else if (session.isAuthenticated) {
+          navigation.replace('Main');
+        } else if (!hasOnboarded) {
+          navigation.replace('Auth', { screen: 'Onboarding' });
+        } else {
+          navigation.replace('Auth', { screen: 'AuthChoice' });
+        }
+      } catch (e) {
+        navigation.replace('Auth', { screen: 'AuthChoice' });
+      }
     };
 
     // Navigate after splash animation completes (3.5 seconds)

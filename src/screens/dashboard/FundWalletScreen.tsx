@@ -164,13 +164,27 @@ const FundWalletScreen: React.FC = () => {
         ) : error ? (
           <View style={styles.errorContainer}>
             <Ionicons name="alert-circle" size={48} color={theme.error || '#ef4444'} />
-            <Text style={[styles.errorText, { color: theme.text }]}>{error}</Text>
-            <TouchableOpacity
-              style={[styles.retryButton, { backgroundColor: theme.primary }]}
-              onPress={fetchVirtualAccount}
-            >
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </TouchableOpacity>
+            <Text style={[styles.errorText, { color: theme.text }]}>
+              {session.user?.kyc_required && session.user?.kyc_status === 'not_started' 
+                ? 'Your virtual accounts will be available once you complete your KYC verification.' 
+                : error}
+            </Text>
+            
+            {session.user?.kyc_required && session.user?.kyc_status === 'not_started' ? (
+              <TouchableOpacity
+                style={[styles.retryButton, { backgroundColor: theme.primary, width: '100%' }]}
+                onPress={() => navigation.navigate('KYC' as any)}
+              >
+                <Text style={styles.retryButtonText}>Complete KYC Now</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.retryButton, { backgroundColor: theme.primary }]}
+                onPress={fetchVirtualAccount}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : virtualAccount ? (
           <View style={styles.accountDetailsContainer}>

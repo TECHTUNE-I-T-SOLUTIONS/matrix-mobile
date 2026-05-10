@@ -12,11 +12,13 @@ import AuthResumeScreen from '../screens/auth/AuthResumeScreen';
 import KYCScreen from '../screens/auth/KYCScreen';
 
 import DashboardLayout from '../screens/dashboard/DashboardLayout';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
 const AppNavigator: React.FC = () => {
   const { session } = useSession();
+  usePushNotifications(session.user?.id);
   const [isReady, setIsReady] = useState(false);
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
 

@@ -13,6 +13,7 @@ import {
   Modal,
   Animated,
   Platform,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -51,7 +52,7 @@ interface KYCData {
 const KYCScreen: React.FC<any> = ({ route }) => {
   const navigation = useNavigation<KYCScreenNavigationProp>();
   const { theme } = useTheme();
-  const { session } = useSession();
+  const { session, signOut } = useSession();
 
   // Use user details from route params if available, otherwise from session
   const initialUser = route?.params?.user || session?.user;
@@ -76,6 +77,8 @@ const KYCScreen: React.FC<any> = ({ route }) => {
   const [currentStep, setCurrentStep] = useState(0); // 0 = Welcome/Marketing, 1-3 = Form
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dobDate, setDobDate] = useState(new Date(2000, 0, 1));
+  const [showImageSourceModal, setShowImageSourceModal] = useState(false);
+  const [pickingFor, setPickingFor] = useState<'id' | 'selfie'>('id');
 
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -122,13 +125,37 @@ const KYCScreen: React.FC<any> = ({ route }) => {
   ];
 
   const pickImage = async (type: 'id' | 'selfie') => {
+    setPickingFor(type);
+    setShowImageSourceModal(true);
+  };
+
+  const launchCamera = async (type: 'id' | 'selfie') => {
+    setShowImageSourceModal(false);
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      showAlert('Permission Required', 'Please grant camera permissions to take a photo', 'warning');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: type === 'id' ? [3, 2] : [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setKycData({ ...kycData, [type === 'id' ? 'idImage' : 'selfieImage']: result.assets[0].uri });
+    }
+  };
+
+  const launchGallery = async (type: 'id' | 'selfie') => {
+    setShowImageSourceModal(false);
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      showAlert('Permission Required', 'Please grant camera roll permissions', 'warning');
+      showAlert('Permission Required', 'Please grant gallery permissions to select a photo', 'warning');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: type === 'id' ? [3, 2] : [1, 1],
       quality: 0.8,
@@ -216,26 +243,34 @@ const KYCScreen: React.FC<any> = ({ route }) => {
     try {
       let userId = session.user?.id;
       let email = session.user?.email || '';
-      const _metadata = (session.user as any)?.user_metadata || {};
-      let firstName = _metadata?.first_name || '';
-      let lastName = _metadata?.last_name || '';
-      let phone = _metadata?.mobile || _metadata?.phone || '';
+      
+      // Extract names from full_name if available
+      const fullName = session.user?.full_name || '';
+      const nameParts = fullName.trim().split(/\s+/);
+      let firstName = nameParts[0] || '';
+      let lastName = nameParts.slice(1).join(' ') || '';
+      let phone = session.user?.phone || '';
 
-      if (!userId) {
-        const stored = await AsyncStorage.getItem('kycPendingCustomer');
-        if (stored) {
-          const pending = JSON.parse(stored);
-          userId = pending.customerId;
-          email = email || pending.email || '';
-          firstName = firstName || pending.firstName || '';
-          lastName = lastName || pending.lastName || '';
-          phone = phone || pending.phone || '';
-        }
+      // Fallback to stored pending customer data if session data is incomplete
+      const stored = await AsyncStorage.getItem('kycPendingCustomer');
+      if (stored) {
+        const pending = JSON.parse(stored);
+        userId = userId || pending.customerId;
+        email = email || pending.email || '';
+        firstName = firstName || pending.firstName || '';
+        lastName = lastName || pending.lastName || '';
+        phone = phone || pending.phone || '';
       }
 
       if (!userId) {
         showAlert('Error', 'Session lost. Please login again.', 'error');
         setIsLoading(false);
+        return;
+      }
+
+      if (!firstName || !lastName) {
+        setIsLoading(false);
+        showAlert('Missing Info', 'Your name is required. Please update your profile.', 'error');
         return;
       }
 
@@ -260,6 +295,12 @@ const KYCScreen: React.FC<any> = ({ route }) => {
       const idUrl = kycData.idImage ? await uploadFile(kycData.idImage, 'identity-documents') : null;
       const selfieUrl = kycData.selfieImage ? await uploadFile(kycData.selfieImage, 'profile-photos') : null;
 
+      if (!idUrl || !selfieUrl) {
+        setIsLoading(false);
+        showAlert('Upload Failed', 'Failed to upload verification photos. Please check your internet connection.', 'error');
+        return;
+      }
+
       const payload = {
         userId, email, firstName, lastName,
         phone: phone.startsWith('+') ? phone : `+234${phone.replace(/^0/, '')}`,
@@ -283,7 +324,19 @@ const KYCScreen: React.FC<any> = ({ route }) => {
       if (response.success) {
         await AsyncStorage.removeItem('kycPendingCustomer');
         showAlert('Yay! KYC Submitted!', 'Verification takes at most, 48 hours. You can now login.', 'success', [
-          { text: 'Login Now', onPress: () => navigation.navigate('Auth', { screen: 'Login' }) }
+          { 
+            text: 'Login Now', 
+            onPress: async () => {
+              if (session.isAuthenticated) {
+                await signOut();
+              }
+              // Navigate to Auth -> Login. Since we signed out, Auth is now in the RootStack
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Auth', params: { screen: 'Login' } }],
+              });
+            }
+          }
         ]);
       } else {
         showAlert('Submission Failed', response.error || 'Failed to submit KYC', 'error');
@@ -401,7 +454,7 @@ const KYCScreen: React.FC<any> = ({ route }) => {
             </>
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.photoBox, { borderColor: theme.border }]} onPress={() => takePhoto('selfie')}>
+        <TouchableOpacity style={[styles.photoBox, { borderColor: theme.border }]} onPress={() => pickImage('selfie')}>
           {kycData.selfieImage ? <Image source={{ uri: kycData.selfieImage }} style={styles.photoFill} /> : (
             <>
               <Ionicons name="person-outline" size={32} color={theme.textSecondary} />
@@ -572,6 +625,60 @@ const KYCScreen: React.FC<any> = ({ route }) => {
         </View>
       </Modal>
 
+      <Modal
+        visible={showImageSourceModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowImageSourceModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowImageSourceModal(false)}
+        >
+          <View style={[styles.sourceModalContent, { backgroundColor: theme.surface }]}>
+            <View style={[styles.modalIndicator, { backgroundColor: theme.border }]} />
+            <Text style={[styles.modalTitle, { color: theme.text, textAlign: 'center' }]}>
+              Choose Image Source
+            </Text>
+            <Text style={[styles.modalSub, { color: theme.textSecondary, textAlign: 'center' }]}>
+              Select how you want to upload your {pickingFor === 'id' ? 'ID Document' : 'Selfie'}
+            </Text>
+
+            <View style={styles.sourceOptions}>
+              <TouchableOpacity 
+                style={[styles.sourceOption, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '30' }]} 
+                onPress={() => launchCamera(pickingFor)}
+              >
+                <View style={[styles.sourceIcon, { backgroundColor: theme.primary }]}>
+                  <Ionicons name="camera" size={24} color="#fff" />
+                </View>
+                <Text style={[styles.sourceText, { color: theme.text }]}>Camera</Text>
+                <Text style={[styles.sourceDesc, { color: theme.textSecondary }]}>Take a live photo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.sourceOption, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '30' }]} 
+                onPress={() => launchGallery(pickingFor)}
+              >
+                <View style={[styles.sourceIcon, { backgroundColor: theme.primary }]}>
+                  <Ionicons name="images" size={24} color="#fff" />
+                </View>
+                <Text style={[styles.sourceText, { color: theme.text }]}>Gallery</Text>
+                <Text style={[styles.sourceDesc, { color: theme.textSecondary }]}>Select from photos</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              onPress={() => setShowImageSourceModal(false)} 
+              style={[styles.cancelBtn, { borderColor: theme.border }]}
+            >
+              <Text style={{ color: theme.text, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <CustomAlert
         {...alertConfig}
         onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
@@ -628,7 +735,16 @@ const styles = StyleSheet.create({
   modalContent: { height: '80%', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
   modalItem: { paddingVertical: 16, borderBottomWidth: 1 },
-  closeBtn: { height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginTop: 20 }
+  closeBtn: { height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
+  modalIndicator: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 15 },
+  modalSub: { fontSize: 14, marginBottom: 25 },
+  sourceModalContent: { width: '100%', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, paddingBottom: 40 },
+  sourceOptions: { flexDirection: 'row', gap: 15, marginBottom: 25 },
+  sourceOption: { flex: 1, padding: 20, borderRadius: 20, borderWidth: 1, alignItems: 'center', gap: 12 },
+  sourceIcon: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
+  sourceText: { fontSize: 16, fontWeight: 'bold' },
+  sourceDesc: { fontSize: 12, textAlign: 'center' },
+  cancelBtn: { height: 56, borderRadius: 28, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' }
 });
 
 export default KYCScreen;

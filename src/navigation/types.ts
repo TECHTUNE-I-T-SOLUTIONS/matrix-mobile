@@ -77,6 +77,10 @@ export type DashboardStackParamList = {
   Referrals: undefined;
   Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; meterType?: string; quantity?: number; status?: string; timestamp?: string } };
   TransactionDetails: { transaction: any };
+  Rewards: undefined;
+  ReferralProgress: undefined;
+  PriceComparison: undefined;
+  SpendAnalytics: undefined;
 };
 
 declare global {

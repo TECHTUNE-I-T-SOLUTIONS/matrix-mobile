@@ -29,6 +29,10 @@ import PinSettingsScreen from './PinSettingsScreen';
 import ReferralsScreen from './ReferralsScreen';
 import SuccessScreen from './SuccessScreen';
 import TransactionDetailsScreen from './TransactionDetailsScreen';
+import RewardsScreen from './RewardsScreen';
+import ReferralProgressScreen from './ReferralProgressScreen';
+import PriceComparisonScreen from './PriceComparisonScreen';
+import SpendAnalyticsScreen from './SpendAnalyticsScreen';
 
 const DashboardStack = createStackNavigator<DashboardStackParamList>();
 
@@ -73,6 +77,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ route }) => {
           <DashboardStack.Screen name="Referrals" component={ReferralsScreen} />
           <DashboardStack.Screen name="Success" component={SuccessScreen} />
           <DashboardStack.Screen name="TransactionDetails" component={TransactionDetailsScreen} />
+          <DashboardStack.Screen name="Rewards" component={RewardsScreen} />
+          <DashboardStack.Screen name="ReferralProgress" component={ReferralProgressScreen} />
+          <DashboardStack.Screen name="PriceComparison" component={PriceComparisonScreen} />
+          <DashboardStack.Screen name="SpendAnalytics" component={SpendAnalyticsScreen} />
         </DashboardStack.Navigator>
       </View>
       <CustomBottomNavigation />

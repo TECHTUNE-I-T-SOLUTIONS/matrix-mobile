@@ -1,0 +1,93 @@
+// src/hooks/useRewards.ts
+import { useState, useEffect } from 'react';
+import { apiClient } from '../services/apiClient';
+
+export interface RewardTransaction {
+  id: string;
+  type: string;
+  amount: number;
+  description: string;
+  created_at: string;
+}
+
+export const useRewards = () => {
+  const [rewardBalance, setRewardBalance] = useState(0);
+  const [transactions, setTransactions] = useState<RewardTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastSpinAt, setLastSpinAt] = useState<string | null>(null);
+  const [nextSpinAt, setNextSpinAt] = useState<string | null>(null);
+  const [canSpinNow, setCanSpinNow] = useState(true);
+
+  const fetchRewards = async () => {
+    setLoading(true);
+    try {
+      const res: any = await apiClient.get('/rewards');
+      
+      // Handle double-wrapped response from apiClient
+      const responseData = res?.data?.data || res?.data;
+      
+      if (res && res.success && responseData) {
+        const balance = responseData.balance || 0;
+        setRewardBalance(balance);
+        setTransactions(responseData.transactions || []);
+        setLastSpinAt(responseData.lastSpinAt || null);
+        setNextSpinAt(responseData.nextSpinAt || null);
+        setCanSpinNow(responseData.canSpinNow ?? true);
+      } else {
+        console.warn('[useRewards] Invalid response format');
+      }
+    } catch (e) {
+      console.error('[useRewards] Failed to fetch rewards:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const spinReward = async () => {
+    try {
+      // Check if user can spin
+      if (!canSpinNow) {
+        console.warn('Cannot spin - already spun today');
+        return 0;
+      }
+
+      const res: any = await apiClient.post('/rewards/spin', {});
+      
+      if (res && res.success) {
+        // Handle double-wrapped response from apiClient
+        const responseData = res?.data?.data || res?.data;
+        
+        // Immediately update state with the response
+        const amount = responseData?.amount || 0;
+        const newBalance = responseData?.newBalance || 0;
+        const nextSpin = responseData?.nextSpinAt;
+
+        setRewardBalance(newBalance);
+        setCanSpinNow(false);
+        setNextSpinAt(new Date(nextSpin).toISOString());
+        setLastSpinAt(new Date().toISOString());
+
+        // Also refresh full data after a slight delay to get DB updates
+        setTimeout(() => {
+          fetchRewards();
+        }, 1000);
+
+        return amount;
+      }
+      return 0;
+    } catch (e: any) {
+      console.warn('Failed to spin', e);
+      // Check if error is "already spun today"
+      if (e?.response?.data?.error?.includes('already spun')) {
+        setCanSpinNow(false);
+      }
+      return 0;
+    }
+  };
+
+  useEffect(() => {
+    fetchRewards();
+  }, []);
+
+  return { rewardBalance, transactions, loading, spinReward, fetchRewards, lastSpinAt, nextSpinAt, canSpinNow };
+};

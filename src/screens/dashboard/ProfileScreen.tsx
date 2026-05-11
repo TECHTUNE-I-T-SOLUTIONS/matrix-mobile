@@ -488,42 +488,33 @@ const ProfileScreen: React.FC = () => {
                   </View>
                 </View>
 
-                {/* Referral Code */}
-                {profileData.referralCode && (
-                  <View style={styles.section}>
-                    <TouchableOpacity
-                      style={[
-                        styles.menuItem,
-                        {
-                          backgroundColor: theme.surface,
-                          borderColor: theme.border,
-                        },
-                      ]}
-                      onPress={() => navigation.navigate('Referrals')}
-                    >
-                      <View style={styles.menuContent}>
-                        <Ionicons
-                          name="people"
-                          size={20}
-                          color={theme.primary}
-                        />
-                        <Text
-                          style={[
-                            styles.menuText,
-                            { color: theme.text },
-                          ]}
-                        >
-                          Referrals
-                        </Text>
-                      </View>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={20}
-                        color={theme.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
+                {/* Rewards Ecosystem */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Ecosystem</Text>
+                  
+                  <TouchableOpacity
+                    style={[styles.menuItem, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    onPress={() => navigation.navigate('PriceComparison')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons name="pricetags" size={20} color={theme.primary} />
+                      <Text style={[styles.menuText, { color: theme.text }]}>Price Comparison</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.menuItem, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    onPress={() => navigation.navigate('SpendAnalytics')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons name="pie-chart" size={20} color={theme.primary} />
+                      <Text style={[styles.menuText, { color: theme.text }]}>Spend Analytics</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                  </TouchableOpacity>
+                  
+                </View>
 
                 {/* Settings & Logout */}
                 <View style={styles.section}>

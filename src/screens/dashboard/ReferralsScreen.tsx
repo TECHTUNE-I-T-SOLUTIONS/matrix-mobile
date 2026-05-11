@@ -208,6 +208,14 @@ const ReferralsScreen: React.FC = () => {
               <Ionicons name="share-social" size={20} color="white" />
               <Text style={styles.shareButtonText}>Share Code</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('ReferralProgress')}
+              style={[styles.progressButton, { borderColor: theme.primary }]}
+            >
+              <Ionicons name="analytics" size={20} color={theme.primary} />
+              <Text style={[styles.progressButtonText, { color: theme.primary }]}>View Referral Progress</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Progress Section */}
@@ -480,6 +488,21 @@ const styles = StyleSheet.create({
   },
   shareButtonText: {
     color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  progressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 12,
+    backgroundColor: 'transparent',
+  },
+  progressButtonText: {
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,

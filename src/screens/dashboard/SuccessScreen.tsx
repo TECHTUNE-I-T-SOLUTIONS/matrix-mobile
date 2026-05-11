@@ -7,7 +7,6 @@ import {
   Text,
   Dimensions,
   Alert,
-  Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -162,19 +161,7 @@ const SuccessScreen: React.FC = () => {
 
   const config = getServiceConfig(data.serviceType);
 
-  const handleShareReceipt = async () => {
-    try {
-      if (viewShotRef.current && viewShotRef.current.capture) {
-        const uri = await viewShotRef.current.capture();
-        await Share.share({
-          message: `Receipt for ${config.title}`,
-          url: uri,
-        });
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to share receipt');
-    }
-  };
+
 
   const handleDone = () => {
     navigation.goBack();
@@ -246,7 +233,7 @@ const SuccessScreen: React.FC = () => {
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[styles.shareButton, { borderColor: config.color }]}
-              onPress={handleShareReceipt}
+              onPress={shareReceipt}
             >
               <Ionicons name="share-outline" size={20} color={config.color} />
               <Text style={[styles.shareButtonText, { color: config.color }]}>Share Receipt</Text>

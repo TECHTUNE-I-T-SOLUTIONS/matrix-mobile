@@ -22,6 +22,7 @@ import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
 import AnnouncementsBanner from '../../components/AnnouncementsBanner';
 import CustomAlert from '../../components/CustomAlert';
+import SubscriptionReminderBanner from '../../components/SubscriptionReminderBanner';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 48) / 2;
@@ -280,6 +281,9 @@ const DashboardScreen: React.FC = () => {
           </View>
 
           <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.notificationButton} onPress={() => navigation.navigate('Rewards')}>
+              <Ionicons name="gift-outline" size={26} color="white" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.notificationButton} onPress={() => navigation.navigate('Notifications')}>
               <Ionicons name="notifications-outline" size={26} color="white" />
               {dashboardData && dashboardData.unreadNotificationsCount > 0 && (
@@ -316,6 +320,7 @@ const DashboardScreen: React.FC = () => {
         ) : (
           <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
             <AnnouncementsBanner />
+            <SubscriptionReminderBanner />
 
             {/* Main Balance Card */}
             <LinearGradient

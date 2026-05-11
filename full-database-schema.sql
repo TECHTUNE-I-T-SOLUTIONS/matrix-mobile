@@ -213,6 +213,7 @@ CREATE TABLE public.profiles (
   card_balance numeric DEFAULT 0,
   locked_balance numeric DEFAULT 0,
   balance_updated_at timestamp with time zone,
+  expo_push_token text,
   CONSTRAINT profiles_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.referral_bonuses (
@@ -359,3 +360,47 @@ CREATE TABLE public.wallets (
   CONSTRAINT wallets_pkey PRIMARY KEY (id),
   CONSTRAINT wallets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
+
+-- Daily spin rewards table
+CREATE TABLE public.daily_spin_rewards (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES public.profiles(id),
+  last_spin_at timestamp with time zone,
+  spin_count integer NOT NULL DEFAULT 0,
+  total_reward numeric NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc', now()),
+  updated_at timestamp with time zone DEFAULT timezone('utc', now())
+);
+
+-- Rewards transactions log
+CREATE TABLE public.rewards_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES public.profiles(id),
+  type text NOT NULL, -- e.g., 'spin', 'referral', 'cashback', 'points'
+  amount numeric NOT NULL,
+  description text,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc', now())
+);
+
+-- Subscription reminders table
+CREATE TABLE public.subscription_reminders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES public.profiles(id),
+  service_type text NOT NULL,
+  service_id uuid,
+  remind_at timestamp with time zone NOT NULL,
+  sent boolean NOT NULL DEFAULT false,
+  interval_minutes integer NOT NULL DEFAULT 1440,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc', now())
+);
+
+-- Spend analytics view (materialized)
+CREATE MATERIALIZED VIEW public.spend_analytics AS
+SELECT
+  user_id,
+  date_trunc('month', created_at) AS month,
+  SUM(amount) AS total_spent,
+  SUM(CASE WHEN type = 'cashback' THEN amount ELSE 0 END) AS total_cashback,
+  SUM(CASE WHEN type = 'discount' THEN amount ELSE 0 END) AS total_discounts
+FROM public.rewards_transactions
+GROUP BY user_id, date_trunc('month', created_at);

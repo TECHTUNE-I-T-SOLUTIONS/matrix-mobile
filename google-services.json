@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "461585565193",
+    "project_id": "matrixtechnologies-fbc25",
+    "storage_bucket": "matrixtechnologies-fbc25.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:461585565193:android:963f8da6dc8b8e2df01ad8",
+        "android_client_info": {
+          "package_name": "com.princetechtune.Matrix"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2jESIpvM-t22wh3mEe3t_iBmRjacKzJ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

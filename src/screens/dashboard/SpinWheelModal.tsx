@@ -1,5 +1,5 @@
 // src/screens/dashboard/SpinWheelModal.tsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -9,41 +9,39 @@ import CustomAlert from '../../components/CustomAlert';
 interface SpinWheelModalProps {
   visible: boolean;
   onClose: () => void;
-  onSpinComplete: () => Promise<number | void>;
+  onSpinComplete: (amount: number) => Promise<number | void>;
   canSpin?: boolean;
 }
 
 const SpinWheelModal: React.FC<SpinWheelModalProps> = ({ visible, onClose, onSpinComplete, canSpin = true }) => {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const [isSpinning, setIsSpinning] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [alertVisible, setAlertVisible] = useState(false);
   const [wonAmount, setWonAmount] = useState(0);
   const spinValue = useRef(new Animated.Value(0)).current;
 
-  // Weighted segments capped at N20 to keep rewards competitive
-  const segments = [1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 8, 10, 12, 15, 18, 20];
-  const colors = [
-    '#dcfce7', '#d1fae5', '#bbf7d0', '#a7f3d0', '#86efac', '#6ee7b7', '#4ade80', '#34d399',
-    '#22c55e', '#16a34a', '#10b981', '#059669', '#047857', '#065f46', '#14532d', '#15803d'
-  ];
+  // The wheel is intentionally limited to N1 through N10.
+  const segments = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const colors = ['#dcfce7', '#d1fae5', '#bbf7d0', '#a7f3d0', '#86efac', '#6ee7b7', '#4ade80', '#34d399', '#22c55e', '#16a34a'];
 
   const handleSpin = async () => {
     if (isSpinning) return;
     setIsSpinning(true);
 
     try {
-      const rewardAmount = (await onSpinComplete()) || 0;
-      if (rewardAmount <= 0) {
+      const normalizedReward = Math.floor(Math.random() * 10) + 1;
+      const segmentIndex = segments.indexOf(normalizedReward);
+      const safeIndex = segmentIndex >= 0 ? segmentIndex : 0;
+
+      if (normalizedReward <= 0) {
         setIsSpinning(false);
         return;
       }
 
-      const segmentIndex = Math.max(0, segments.indexOf(Number(rewardAmount))) || 0;
-
-      // Calculate a random number of rotations (between 4 and 8 for more spins)
       const rotations = Math.floor(Math.random() * 5) + 4;
       const segmentAngle = 360 / segments.length;
-      const finalAngle = rotations * 360 + (segmentIndex * segmentAngle);
+      const finalAngle = rotations * 360 - safeIndex * segmentAngle;
 
       Animated.timing(spinValue, {
         toValue: finalAngle,
@@ -53,8 +51,16 @@ const SpinWheelModal: React.FC<SpinWheelModalProps> = ({ visible, onClose, onSpi
       }).start(({ finished }) => {
         if (finished) {
           setIsSpinning(false);
-          setWonAmount(Number(rewardAmount));
+          setWonAmount(normalizedReward);
+          setIsSubmitting(true);
           setAlertVisible(true);
+          void onSpinComplete(normalizedReward)
+            .catch((error) => {
+              console.error('[SpinWheelModal] Failed to record spin:', error);
+            })
+            .finally(() => {
+              setIsSubmitting(false);
+            });
         } else {
           setIsSpinning(false);
         }
@@ -74,24 +80,20 @@ const SpinWheelModal: React.FC<SpinWheelModalProps> = ({ visible, onClose, onSpi
     const size = 300;
     const radius = size / 2;
     const center = size / 2;
-    
-    // Create SVG paths for slices
+
     return (
       <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <G rotation="-90" origin={`${center}, ${center}`}>
           {segments.map((segment, index) => {
             const startAngle = (index * 360) / segments.length;
             const endAngle = ((index + 1) * 360) / segments.length;
-            
+
             const x1 = center + radius * Math.cos((Math.PI * startAngle) / 180);
             const y1 = center + radius * Math.sin((Math.PI * startAngle) / 180);
             const x2 = center + radius * Math.cos((Math.PI * endAngle) / 180);
             const y2 = center + radius * Math.sin((Math.PI * endAngle) / 180);
 
-            // Path for the slice
             const d = `M${center},${center} L${x1},${y1} A${radius},${radius} 0 0,1 ${x2},${y2} Z`;
-            
-            // Text positioning
             const textAngle = startAngle + (endAngle - startAngle) / 2;
             const textX = center + (radius * 0.7) * Math.cos((Math.PI * textAngle) / 180);
             const textY = center + (radius * 0.7) * Math.sin((Math.PI * textAngle) / 180);
@@ -120,40 +122,35 @@ const SpinWheelModal: React.FC<SpinWheelModalProps> = ({ visible, onClose, onSpi
   };
 
   return (
-    <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
           <TouchableOpacity style={styles.closeButton} onPress={onClose} disabled={isSpinning}>
             <Ionicons name="close" size={24} color={theme.textSecondary} />
           </TouchableOpacity>
-          
+
           <Text style={[styles.title, { color: theme.text }]}>Daily Spin Wheel</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             Spin the wheel once a day to earn wallet bonuses!
           </Text>
 
           <View style={styles.wheelContainer}>
-            {/* Pointer */}
             <View style={styles.pointerContainer}>
               <Ionicons name="caret-down" size={40} color={theme.primary} style={styles.pointer} />
             </View>
-            
-            {/* Wheel */}
+
             <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
               {renderWheel()}
             </Animated.View>
           </View>
 
           <TouchableOpacity
-            style={[
-              styles.spinButton, 
-              { backgroundColor: !canSpin || isSpinning ? '#ccc' : '#10B981' }
-            ]}
+            style={[styles.spinButton, { backgroundColor: !canSpin || isSpinning || isSubmitting ? '#ccc' : '#10B981' }]}
             onPress={handleSpin}
-            disabled={!canSpin || isSpinning}
+            disabled={!canSpin || isSpinning || isSubmitting}
           >
             <Text style={styles.spinButtonText}>
-              {isSpinning ? 'SPINNING...' : !canSpin ? 'SPUN TODAY' : 'SPIN NOW'}
+              {isSpinning ? 'SPINNING...' : isSubmitting ? 'RECORDING...' : !canSpin ? 'SPUN TODAY' : 'SPIN NOW'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -170,8 +167,8 @@ const SpinWheelModal: React.FC<SpinWheelModalProps> = ({ visible, onClose, onSpi
             onPress: () => {
               setAlertVisible(false);
               onClose();
-              // Reset spin value for next time
               spinValue.setValue(0);
+              setIsSubmitting(false);
             },
             style: 'default',
           },

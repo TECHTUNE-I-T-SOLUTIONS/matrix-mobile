@@ -1,23 +1,20 @@
 // src/screens/dashboard/TransactionsScreen.tsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
   Text,
   RefreshControl,
   TouchableOpacity,
   TextInput,
-  SafeAreaView,
-  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
-import ThemeToggle from '../../components/ThemeToggle';
 import { useNavigation } from '@react-navigation/native';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 interface Transaction {
   id: string;
@@ -33,7 +30,7 @@ interface Transaction {
 
 const TransactionsScreen: React.FC = () => {
   const { theme } = useTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -44,27 +41,24 @@ const TransactionsScreen: React.FC = () => {
 
   const fetchTransactions = async () => {
     try {
-      const params: any = {};
-      if (startDate) params.start_date = startDate;
-      if (endDate) params.end_date = endDate;
+      const params = new URLSearchParams();
+      if (startDate) params.set('start_date', startDate);
+      if (endDate) params.set('end_date', endDate);
 
-      const response = await apiClient.post('/transactions/all', params);
+      const query = params.toString();
+      const response = await apiClient.get(`/transactions/all${query ? `?${query}` : ''}`);
       if (response.success && response.data) {
-        // Classify transactions based on service_type if transaction_type is missing
         const rawTransactions = (response.data as any).data.transactions || [];
         const processed = rawTransactions.map((tx: any) => {
-          let type = tx.transaction_type?.toLowerCase();
-          const service = tx.service_type?.toLowerCase();
-          
-          // Normalize to 'credit' or 'debit' for the UI filter
-          if (service === 'wallet_funding' || service === 'funding' || service === 'credit' || type === 'credit' || type === 'wallet_funding') {
-            type = 'credit';
-          } else {
-            // Airtime, Data, Cable, etc are all debits (outgoing)
-            type = 'debit';
+          const service = String(tx.service_type || '').toLowerCase();
+          const rawType = String(tx.transaction_type || '').toLowerCase();
+
+          let normalized: 'credit' | 'debit' = 'debit';
+          if (service === 'wallet_funding' || service === 'funding' || rawType === 'credit' || rawType === 'wallet_funding') {
+            normalized = 'credit';
           }
-          
-          return { ...tx, transaction_type: type };
+
+          return { ...tx, transaction_type: normalized };
         });
         setTransactions(processed);
       }
@@ -86,10 +80,7 @@ const TransactionsScreen: React.FC = () => {
   };
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((t) => {
-      if (filter === 'all') return true;
-      return t.transaction_type === filter;
-    });
+    return transactions.filter((t) => filter === 'all' || t.transaction_type === filter);
   }, [transactions, filter]);
 
   const getStatusColor = (status: string) => {
@@ -120,7 +111,7 @@ const TransactionsScreen: React.FC = () => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}> 
       <LinearGradient colors={[theme.primary, theme.primary + 'DD']} style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="white" />
@@ -132,9 +123,21 @@ const TransactionsScreen: React.FC = () => {
       </LinearGradient>
 
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
-        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.loadingSkeletonWrap}>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <View key={index} style={[styles.skeletonRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width={44} height={44} borderRadius={22} />
+              <View style={styles.skeletonDetails}>
+                <SkeletonLoader width="55%" height={14} marginBottom={8} />
+                <SkeletonLoader width="35%" height={12} />
+              </View>
+              <View style={styles.skeletonAmount}>
+                <SkeletonLoader width="75%" height={14} marginBottom={8} />
+                <SkeletonLoader width="55%" height={12} />
+              </View>
+            </View>
+          ))}
+        </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
           <View style={styles.filterBar}>
@@ -145,7 +148,7 @@ const TransactionsScreen: React.FC = () => {
                   style={[
                     styles.filterBtn,
                     filter === f && { backgroundColor: theme.primary, borderColor: theme.primary },
-                    filter !== f && { borderColor: theme.border }
+                    filter !== f && { borderColor: theme.border },
                   ]}
                   onPress={() => setFilter(f)}
                 >
@@ -192,7 +195,7 @@ const TransactionsScreen: React.FC = () => {
                   <TouchableOpacity
                     key={tx.id}
                     style={[styles.transactionItem, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                    onPress={() => (navigation as any).navigate('TransactionDetails', { transaction: tx })}
+                    onPress={() => navigation.navigate('TransactionDetails', { transaction: tx })}
                   >
                     <View style={[styles.iconContainer, { backgroundColor: tx.transaction_type === 'credit' ? '#10B98115' : '#EF444415' }]}>
                       <Ionicons
@@ -233,7 +236,6 @@ const styles = StyleSheet.create({
   backButton: { position: 'absolute', left: 20, top: 60 },
   headerContent: { alignItems: 'center', gap: 5 },
   title: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   filterBar: { flexDirection: 'row', padding: 15, alignItems: 'center', gap: 10 },
   filterButtons: { flex: 1, flexDirection: 'row', gap: 8 },
   filterBtn: { flex: 1, paddingVertical: 8, borderRadius: 20, borderWidth: 1, alignItems: 'center' },
@@ -243,6 +245,10 @@ const styles = StyleSheet.create({
   dateInputGroup: { flexDirection: 'row', gap: 10 },
   dateInput: { flex: 1, height: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, fontSize: 12 },
   content: { flex: 1, paddingHorizontal: 15 },
+  loadingSkeletonWrap: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderRadius: 16 },
+  skeletonDetails: { flex: 1 },
+  skeletonAmount: { width: 92, alignItems: 'flex-end' },
   transactionsList: { gap: 10, padding: 15 },
   transactionItem: { flexDirection: 'row', padding: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', gap: 12 },
   iconContainer: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },

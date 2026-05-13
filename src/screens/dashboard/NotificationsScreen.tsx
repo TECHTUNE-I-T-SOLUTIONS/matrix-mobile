@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Text,
   RefreshControl,
 } from 'react-native';
@@ -14,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 interface Notification {
   id: string;
   title: string;
@@ -99,8 +99,27 @@ const NotificationsScreen: React.FC = () => {
         </View>
 
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={styles.loadingSkeletonWrap}>
+            <View style={[styles.loadingSkeletonHero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width="36%" height={14} marginBottom={12} />
+              <SkeletonLoader width="60%" height={24} marginBottom={8} />
+              <SkeletonLoader width="48%" height={14} />
+            </View>
+            <View style={styles.loadingFilterRow}>
+              {Array.from({ length: 2 }).map((_, index) => (
+                <SkeletonLoader key={index} width={88} height={34} borderRadius={18} />
+              ))}
+            </View>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <View key={index} style={[styles.loadingItem, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <SkeletonLoader width={40} height={40} borderRadius={20} />
+                <View style={{ flex: 1 }}>
+                  <SkeletonLoader width="60%" height={14} marginBottom={8} />
+                  <SkeletonLoader width="84%" height={12} marginBottom={6} />
+                  <SkeletonLoader width="42%" height={12} />
+                </View>
+              </View>
+            ))}
           </View>
         ) : (
           <ScrollView
@@ -267,6 +286,31 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  loadingSkeletonWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  loadingSkeletonHero: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+  },
+  loadingFilterRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  loadingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
   },
   loadingContainer: {
     flex: 1,

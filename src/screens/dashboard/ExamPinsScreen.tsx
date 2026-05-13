@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,9 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
+import CustomAlert from '../../components/CustomAlert';
 
 interface ExamPin {
   id: string;
+  product_code?: string;
   name: string;
   amount: number;
   description: string;
@@ -39,6 +40,24 @@ const ExamPinsScreen: React.FC = () => {
   const [selectedPin, setSelectedPin] = useState<ExamPin | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingPins, setLoadingPins] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   useEffect(() => {
     if (selectedExam) {
@@ -49,15 +68,24 @@ const ExamPinsScreen: React.FC = () => {
   const fetchExamPins = async () => {
     try {
       setLoadingPins(true);
-      const response = await apiClient.get(`/epins/${selectedExam}`);
+      const response = await apiClient.get('/services/epins');
       if (response.success) {
-        setExamPins((response.data as ExamPin[]) || []);
+        const pins = Array.isArray(response.data) ? response.data : (response.data as any)?.data || [];
+        setExamPins(
+          pins.map((pin: any) => ({
+            id: pin.id || pin.product_code,
+            product_code: pin.product_code || pin.code || pin.id,
+            name: pin.name,
+            amount: parseFloat(pin.amount) || 0,
+            description: pin.description || pin.type || selectedExam.toUpperCase(),
+          }))
+        );
       } else {
-        Alert.alert('Error', 'Failed to load exam pins');
+        showAlert('Error', 'Failed to load exam pins', 'error');
       }
     } catch (error) {
       console.error('Fetch exam pins error:', error);
-      Alert.alert('Error', 'Failed to load exam pins');
+      showAlert('Error', 'Failed to load exam pins', 'error');
     } finally {
       setLoadingPins(false);
     }
@@ -65,57 +93,56 @@ const ExamPinsScreen: React.FC = () => {
 
   const handlePurchase = async () => {
     if (!selectedExam || !selectedPin || !quantity) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
     const qty = parseInt(quantity);
     if (qty < 1 || qty > 10) {
-      Alert.alert('Error', 'Quantity must be between 1 and 10');
+      showAlert('Error', 'Quantity must be between 1 and 10', 'error');
       return;
     }
 
     try {
       setLoading(true);
-      const response = await apiClient.post('/services/exam-pins/vend', {
-        id: selectedExam,
-        qty: qty,
+      const response = await apiClient.post('/services/epins', {
+        epin_type: selectedExam,
+        product_code: selectedPin.product_code || selectedPin.id,
+        quantity: qty,
       });
 
       if (response.success) {
-        Alert.alert(
-          'Success',
-          'Exam pins purchase successful!',
-          [
-            {
-              text: 'View Receipt',
-              onPress: () => navigation.navigate('Success', {
+        showAlert('Success', 'Exam pins purchase successful!', 'success', [
+          {
+            text: 'View Receipt',
+            onPress: () =>
+              navigation.navigate('Success', {
                 data: {
                   serviceType: 'exampins',
                   amount: selectedPin.amount * qty,
                   planName: `${selectedPin.name} (${qty} pin${qty > 1 ? 's' : ''})`,
                   provider: selectedExam.toUpperCase(),
                   quantity: qty,
-                  transactionId: (response as any).transactionId || (response as any).data?.reference || `TXN_${Date.now()}`,
-                  status: (response as any).status || 'completed',
+                  transactionId:
+                    (response as any).data?.transaction_id || (response as any).data?.reference || `TXN_${Date.now()}`,
+                  status: (response as any).data?.status || 'completed',
                   timestamp: new Date().toISOString(),
                   ...(response as any).data && { apiResponse: (response as any).data },
-                }
-              })
-            },
-            {
-              text: 'Done',
-              onPress: () => navigation.goBack(),
-              style: 'cancel'
-            }
-          ]
-        );
+                },
+              }),
+          },
+          {
+            text: 'Done',
+            onPress: () => navigation.goBack(),
+            style: 'cancel',
+          },
+        ]);
       } else {
-        Alert.alert('Error', response.error || 'Purchase failed');
+        showAlert('Error', response.error || 'Purchase failed', 'error');
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Error', 'Failed to complete purchase');
+      showAlert('Error', 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
     }
@@ -284,6 +311,7 @@ const ExamPinsScreen: React.FC = () => {
             )}
           </TouchableOpacity>
         </View>
+        <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
       </ScrollView>
     );
 };

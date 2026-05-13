@@ -10,21 +10,12 @@ import {
   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../contexts/ThemeContext';
-import { useSession } from '../contexts/SessionContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
-type SplashScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Splash'>;
-
 const SplashScreen: React.FC = () => {
-  const navigation = useNavigation<SplashScreenNavigationProp>();
   const { theme } = useTheme();
-  const { session } = useSession();
   const [mounted, setMounted] = useState(false);
 
   // Animation values
@@ -67,37 +58,8 @@ const SplashScreen: React.FC = () => {
       }),
     ]).start();
 
-    // Determine where to navigate based on session state
-    const navigateAfterSplash = async () => {
-      if (session.isLoading) {
-        setTimeout(navigateAfterSplash, 500);
-        return;
-      }
-
-      try {
-        const hasOnboarded = await AsyncStorage.getItem('HAS_ONBOARDED');
-        
-        if (session.requiresResumeAuth) {
-          navigation.replace('AuthResume');
-        } else if (session.isAuthenticated) {
-          navigation.replace('Main');
-        } else if (!hasOnboarded) {
-          navigation.replace('Auth', { screen: 'Onboarding' });
-        } else {
-          navigation.replace('Auth', { screen: 'AuthChoice' });
-        }
-      } catch (e) {
-        navigation.replace('Auth', { screen: 'AuthChoice' });
-      }
-    };
-
-    // Navigate after splash animation completes (3.5 seconds)
-    const timer = setTimeout(() => {
-      navigateAfterSplash();
-    }, 3500);
-
-    return () => clearTimeout(timer);
-  }, [navigation, logoScale, logoOpacity, textOpacity, textTranslateY, session]);
+    return () => undefined;
+  }, [logoScale, logoOpacity, textOpacity, textTranslateY]);
 
   if (!mounted) {
     return (

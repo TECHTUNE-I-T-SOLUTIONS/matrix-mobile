@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,9 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
+import CustomAlert from '../../components/CustomAlert';
 
 interface CablePlan {
   id: string;
+  plan_id?: string;
   name: string;
   amount: number;
   duration: string;
@@ -40,6 +41,24 @@ const CableTVScreen: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<CablePlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingPlans, setLoadingPlans] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   useEffect(() => {
     if (selectedProvider) {
@@ -52,93 +71,79 @@ const CableTVScreen: React.FC = () => {
       setLoadingPlans(true);
       const response = await apiClient.get(`/services/tv/packages?service=${selectedProvider}`);
       if (response.success && response.data) {
-        // Parse the nested response structure from Payscribe API
-        const payscribeData = response.data as any;
-        if (payscribeData.status && payscribeData.message?.details && Array.isArray(payscribeData.message.details)) {
-          const plans = payscribeData.message.details.map((plan: any) => ({
-            id: plan.id,
-            plan_id: plan.plan_id || plan.id,
-            name: plan.name,
-            amount: parseFloat(plan.amount) || 0,
-            validity: plan.validity,
-            logo: plan.logo,
-            service: selectedProvider,
-          }));
-          setCablePlans(plans);
-        } else {
-          setCablePlans([]);
-        }
+        const plans = Array.isArray(response.data)
+          ? response.data
+          : (response.data as any)?.data || (response.data as any)?.message?.details || [];
+
+        const normalizedPlans = (plans as any[]).map((plan: any) => ({
+          id: plan.id || plan.plan_id,
+          plan_id: plan.plan_id || plan.id,
+          name: plan.name,
+          amount: parseFloat(plan.amount) || 0,
+          duration: plan.validity || plan.duration || '1 month',
+        }));
+
+        setCablePlans(normalizedPlans);
       } else {
         setCablePlans([]);
-        Alert.alert('Error', 'Failed to load cable plans');
+        showAlert('Error', 'Failed to load cable plans', 'error');
       }
     } catch (error) {
       console.error('Fetch cable plans error:', error);
       setCablePlans([]);
-      Alert.alert('Error', 'Failed to load cable plans');
+      showAlert('Error', 'Failed to load cable plans', 'error');
     } finally {
       setLoadingPlans(false);
     }
   };
 
   const handlePurchase = async () => {
-    if (!selectedProvider || !smartCardNumber || !selectedPlan || !phoneNumber || !userEmail) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(userEmail)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+    if (!selectedProvider || !smartCardNumber || !selectedPlan) {
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
     try {
       setLoading(true);
-      const response = await apiClient.post('/services/cable', {
-        smart_card: smartCardNumber,
+      const response = await apiClient.post('/services/tv/purchase', {
+        smartcard_number: smartCardNumber,
+        package_id: selectedPlan.plan_id || selectedPlan.id,
         service: selectedProvider,
-        plan: selectedPlan.name,
-        plan_id: selectedPlan.id,
-        phone: phoneNumber,
-        email: userEmail,
+        amount: selectedPlan.amount,
       });
 
       if (response.success) {
-        Alert.alert(
-          'Success',
-          'Cable TV subscription successful!',
-          [
-            {
-              text: 'View Receipt',
-              onPress: () => navigation.navigate('Success', {
+        showAlert('Success', 'Cable TV subscription successful!', 'success', [
+          {
+            text: 'View Receipt',
+            onPress: () =>
+              navigation.navigate('Success', {
                 data: {
                   serviceType: 'cabletv',
                   amount: selectedPlan.amount,
                   recipient: smartCardNumber,
                   planName: selectedPlan.name,
                   provider: selectedProvider,
-                  transactionId: (response as any).transactionId || (response as any).data?.reference || `TXN_${Date.now()}`,
-                  status: (response as any).status || 'completed',
+                  transactionId:
+                    (response as any).data?.transaction_id || (response as any).data?.reference || `TXN_${Date.now()}`,
+                  status: (response as any).data?.status || 'completed',
                   timestamp: new Date().toISOString(),
                   ...(response as any).data && { apiResponse: (response as any).data },
-                }
-              })
-            },
-            {
-              text: 'Done',
-              onPress: () => navigation.goBack(),
-              style: 'cancel'
-            }
-          ]
-        );
+                },
+              }),
+          },
+          {
+            text: 'Done',
+            onPress: () => navigation.goBack(),
+            style: 'cancel',
+          },
+        ]);
       } else {
-        Alert.alert('Error', response.error || 'Purchase failed');
+        showAlert('Error', response.error || 'Purchase failed', 'error');
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Error', 'Failed to complete purchase');
+      showAlert('Error', 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
     }
@@ -323,6 +328,7 @@ const CableTVScreen: React.FC = () => {
             )}
           </TouchableOpacity>
         </View>
+        <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
       </ScrollView>
     );
 };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native'
-import * as FileSystem from 'expo-file-system'
+import * as FileSystem from 'expo-file-system/legacy'
 import * as IntentLauncher from 'expo-intent-launcher'
 import * as Application from 'expo-application'
 
@@ -70,26 +70,13 @@ const ApkInstaller: React.FC = () => {
       }
 
       const localUri = (FileSystem as any).cacheDirectory + filename
-
-      const callback = (downloadProgress: any) => {
-        const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite
-        setDownloadProgress(progress)
-      }
-
       const downloadOptions: any = {}
       if (!websiteDownload && GITHUB_TOKEN) downloadOptions.headers = { Authorization: `Bearer ${GITHUB_TOKEN}` }
 
       if (!downloadUrl) throw new Error('No download URL available')
-      
-      const downloadResumable = FileSystem.createDownloadResumable(
-        downloadUrl,
-        localUri,
-        downloadOptions,
-        callback
-      )
 
-      const downloadResult = await downloadResumable.downloadAsync()
-      if (!downloadResult) throw new Error('Download failed')
+      const downloadResult = await FileSystem.downloadAsync(downloadUrl, localUri, downloadOptions)
+      if (!downloadResult || !downloadResult.uri) throw new Error('Download failed')
 
       const { uri } = downloadResult
 

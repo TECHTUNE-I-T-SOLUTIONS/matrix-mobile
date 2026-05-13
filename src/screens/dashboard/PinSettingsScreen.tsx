@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   Switch,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +15,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
+import CustomAlert from '../../components/CustomAlert';
 
 const PinSettingsScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -28,6 +28,24 @@ const PinSettingsScreen: React.FC = () => {
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasPin, setHasPin] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   useEffect(() => {
     // Check if user has PIN set
@@ -49,17 +67,17 @@ const PinSettingsScreen: React.FC = () => {
 
   const handleSetPin = async () => {
     if (!newPin || newPin.length < 4) {
-      Alert.alert('Error', 'PIN must be at least 4 digits');
+      showAlert('Error', 'PIN must be at least 4 digits', 'error');
       return;
     }
 
     if (newPin !== confirmPin) {
-      Alert.alert('Error', 'PINs do not match');
+      showAlert('Error', 'PINs do not match', 'error');
       return;
     }
 
     if (hasPin && !currentPin) {
-      Alert.alert('Error', 'Please enter your current PIN');
+      showAlert('Error', 'Please enter your current PIN', 'error');
       return;
     }
 
@@ -74,9 +92,10 @@ const PinSettingsScreen: React.FC = () => {
       const response = await apiClient.post(endpoint, payload);
 
       if (response.success) {
-        Alert.alert(
+        showAlert(
           'Success',
           hasPin ? 'PIN changed successfully' : 'PIN set successfully',
+          'success',
           [
             {
               text: 'OK',
@@ -90,11 +109,11 @@ const PinSettingsScreen: React.FC = () => {
           ]
         );
       } else {
-        Alert.alert('Error', response.error || 'Failed to set PIN');
+        showAlert('Error', response.error || 'Failed to set PIN', 'error');
       }
     } catch (error) {
       console.error('Error setting PIN:', error);
-      Alert.alert('Error', 'Failed to set PIN. Please try again.');
+      showAlert('Error', 'Failed to set PIN. Please try again.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -102,7 +121,7 @@ const PinSettingsScreen: React.FC = () => {
 
   const handleToggleBiometric = async (value: boolean) => {
     if (!hasPin && value) {
-      Alert.alert('Error', 'Please set a PIN first before enabling biometric authentication');
+      showAlert('Error', 'Please set a PIN first before enabling biometric authentication', 'error');
       return;
     }
 
@@ -111,16 +130,13 @@ const PinSettingsScreen: React.FC = () => {
 
       if (response.success) {
         setBiometricEnabled(value);
-        Alert.alert(
-          'Success',
-          value ? 'Biometric authentication enabled' : 'Biometric authentication disabled'
-        );
+        showAlert('Success', value ? 'Biometric authentication enabled' : 'Biometric authentication disabled', 'success');
       } else {
-        Alert.alert('Error', response.error || 'Failed to update biometric settings');
+        showAlert('Error', response.error || 'Failed to update biometric settings', 'error');
       }
     } catch (error) {
       console.error('Error toggling biometric:', error);
-      Alert.alert('Error', 'Failed to update biometric settings');
+      showAlert('Error', 'Failed to update biometric settings', 'error');
     }
   };
 
@@ -282,6 +298,7 @@ const PinSettingsScreen: React.FC = () => {
 
           <View style={{ height: 100 }} />
         </ScrollView>
+        <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
       </LinearGradient>
     );
 };

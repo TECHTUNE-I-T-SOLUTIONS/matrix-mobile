@@ -87,12 +87,12 @@ const lightTheme: ThemeColors = {
 };
 
 const darkTheme: ThemeColors = {
-  primary: '#047603', // Same dark green primary
-  primaryLight: '#0a8f0a',
+  primary: '#055E03', // Same dark green primary
+  primaryLight: '#046804',
   primaryDark: '#035a03',
 
-  background: '#012201', // Darker background for dark mode
-  surface: '#1a3a1a',
+  background: '#000000', // Darker background for dark mode
+  surface: '#0A180A',
   surfaceVariant: '#2a4a2a',
 
   text: '#f8fafc',

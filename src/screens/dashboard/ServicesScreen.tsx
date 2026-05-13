@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Text,
   RefreshControl,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 interface Service {
   id: string;
@@ -67,6 +67,7 @@ const ServicesScreen: React.FC = () => {
       'Wifi': 'wifi',
       'Target': 'radio-button-on',
       'Globe': 'globe',
+      'Wallet': 'wallet',
     };
     return iconMap[icon] || 'flash'; // fallback to flash
   };
@@ -81,6 +82,8 @@ const ServicesScreen: React.FC = () => {
       internet: 'Internet',
       betting: 'Betting',
       'international-bills': 'InternationalBills',
+      'airtime-to-wallet': 'AirtimeToWallet',
+      'bulk-sms': 'BulkSms',
     };
     return screenMap[serviceId] || 'ServiceDetail';
   };
@@ -103,8 +106,26 @@ const ServicesScreen: React.FC = () => {
         </View>
 
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={styles.loadingSkeletonWrap}>
+            <View style={[styles.loadingSkeletonHero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width="32%" height={14} marginBottom={12} />
+              <SkeletonLoader width="58%" height={24} marginBottom={8} />
+              <SkeletonLoader width="72%" height={14} />
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.loadingCategoryRow}>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <SkeletonLoader key={index} width={88} height={34} borderRadius={18} />
+              ))}
+            </ScrollView>
+            <View style={styles.loadingGrid}>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <View key={index} style={[styles.loadingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <SkeletonLoader width={56} height={56} borderRadius={28} marginBottom={12} />
+                  <SkeletonLoader width="68%" height={14} marginBottom={8} />
+                  <SkeletonLoader width="86%" height={12} />
+                </View>
+              ))}
+            </View>
           </View>
         ) : (
           <ScrollView
@@ -233,6 +254,35 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  loadingSkeletonWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  loadingSkeletonHero: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+  },
+  loadingCategoryRow: {
+    marginBottom: 18,
+    gap: 10,
+  },
+  loadingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  loadingCard: {
+    width: '48%',
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 20,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    marginBottom: 12,
   },
   loadingContainer: {
     flex: 1,

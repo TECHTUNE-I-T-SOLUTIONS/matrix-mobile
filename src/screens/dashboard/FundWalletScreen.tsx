@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Text,
   TouchableOpacity,
-  Alert,
   Clipboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +17,8 @@ import { useSession } from '../../contexts/SessionContext';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { DashboardStackParamList } from '../../navigation/types';
+import CustomAlert from '../../components/CustomAlert';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 const { width } = Dimensions.get('window');
 
@@ -37,6 +38,24 @@ const FundWalletScreen: React.FC = () => {
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   useEffect(() => {
     fetchVirtualAccount();
@@ -103,9 +122,9 @@ const FundWalletScreen: React.FC = () => {
   const copyToClipboard = async (text: string, label: string) => {
     try {
       await Clipboard.setString(text);
-      Alert.alert('Copied', `${label} copied to clipboard!`);
+      showAlert('Copied', `${label} copied to clipboard!`, 'success');
     } catch (error) {
-      Alert.alert('Error', 'Failed to copy to clipboard');
+      showAlert('Error', 'Failed to copy to clipboard', 'error');
     }
   };
 
@@ -155,11 +174,18 @@ const FundWalletScreen: React.FC = () => {
         </View>
 
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-              Loading account details...
-            </Text>
+          <View style={styles.loadingSkeletonWrap}>
+            <View style={[styles.loadingInfoCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width="42%" height={14} marginBottom={12} />
+              <SkeletonLoader width="78%" height={22} marginBottom={10} />
+              <SkeletonLoader width="62%" height={14} />
+            </View>
+            <View style={[styles.loadingAccountCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width="36%" height={12} marginBottom={10} />
+              <SkeletonLoader width="72%" height={20} marginBottom={14} />
+              <SkeletonLoader width="46%" height={12} marginBottom={10} />
+              <SkeletonLoader width="88%" height={18} />
+            </View>
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>
@@ -265,6 +291,7 @@ const FundWalletScreen: React.FC = () => {
           </View>
         ) : null}
 
+        <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -313,6 +340,21 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginLeft: 12,
     flex: 1,
+  },
+  loadingSkeletonWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  loadingInfoCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+  },
+  loadingAccountCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 18,
   },
   loadingContainer: {
     alignItems: 'center',

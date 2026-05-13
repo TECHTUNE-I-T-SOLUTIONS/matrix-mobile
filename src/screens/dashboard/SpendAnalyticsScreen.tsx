@@ -1,21 +1,24 @@
 // src/screens/dashboard/SpendAnalyticsScreen.tsx
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSpendAnalytics } from '../../hooks/useSpendAnalytics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 const SpendAnalyticsScreen = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation<any>();
-  const { analytics, loading } = useSpendAnalytics();
+  const { analytics, summary, serviceBreakdown, statusBreakdown, topTransactions, loading } = useSpendAnalytics();
 
   const maxSpend = analytics.length > 0 ? Math.max(...analytics.map(a => a.total_spent)) : 1;
 
-  const totalSpentAll = analytics.reduce((acc, curr) => acc + curr.total_spent, 0);
-  const totalCashbackAll = analytics.reduce((acc, curr) => acc + curr.total_cashback, 0);
+  const totalSpentAll = summary.totalSpent || analytics.reduce((acc, curr) => acc + curr.total_spent, 0);
+  const totalCashbackAll = summary.totalCashback || analytics.reduce((acc, curr) => acc + curr.total_cashback, 0);
+
+  const serviceMax = serviceBreakdown.length > 0 ? Math.max(...serviceBreakdown.map((item) => item.amount)) : 1;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -49,7 +52,15 @@ const SpendAnalyticsScreen = () => {
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Monthly Spending</Text>
         
         {loading ? (
-          <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 40 }} />
+          <View style={[styles.chartContainer, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff' }]}>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <View key={index} style={styles.barWrapper}>
+                <SkeletonLoader width={28} height={12} marginBottom={8} />
+                <SkeletonLoader width={30} height={150} borderRadius={16} />
+                <SkeletonLoader width={32} height={12} marginBottom={0} />
+              </View>
+            ))}
+          </View>
         ) : (
           <View style={[styles.chartContainer, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff' }]}>
             {analytics.map((data, index) => {
@@ -69,6 +80,78 @@ const SpendAnalyticsScreen = () => {
                 </View>
               );
             })}
+          </View>
+        )}
+
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Service Breakdown</Text>
+        {loading ? (
+          <View style={[styles.breakdownCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff' }]}>
+            {Array.from({ length: 4 }).map((_, index) => (
+              <SkeletonLoader key={index} width="100%" height={18} marginBottom={16} />
+            ))}
+          </View>
+        ) : (
+          <View style={[styles.breakdownCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff' }]}>
+            {serviceBreakdown.length > 0 ? serviceBreakdown.map((item) => {
+              const widthPercent = Math.max((item.amount / serviceMax) * 100, 6)
+              return (
+                <View key={item.name} style={styles.breakdownRow}>
+                  <View style={styles.breakdownLabelRow}>
+                    <Text style={[styles.breakdownLabel, { color: theme.text }]}>{item.name}</Text>
+                    <Text style={[styles.breakdownCount, { color: theme.textSecondary }]}>{item.count} tx</Text>
+                  </View>
+                  <View style={styles.breakdownBarTrack}>
+                    <LinearGradient colors={['#10B981', theme.primary]} style={[styles.breakdownBarFill, { width: `${widthPercent}%` }]} />
+                  </View>
+                  <Text style={[styles.breakdownAmount, { color: theme.text }]}>{item.amount.toLocaleString()}₦</Text>
+                </View>
+              )
+            }) : (
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No service data available yet.</Text>
+            )}
+          </View>
+        )}
+
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Status Breakdown</Text>
+        <View style={styles.statusRow}>
+          {loading ? (
+            Array.from({ length: 3 }).map((_, index) => (
+              <SkeletonLoader key={index} width={94} height={78} borderRadius={18} />
+            ))
+          ) : (
+            statusBreakdown.map((item) => (
+              <View key={item.name} style={[styles.statusCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.statusValue, { color: theme.text }]}>{item.count}</Text>
+                <Text style={[styles.statusLabel, { color: theme.textSecondary }]}>{item.name}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Transactions</Text>
+        {loading ? (
+          <View style={[styles.topListCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff' }]}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <SkeletonLoader key={index} width="100%" height={54} marginBottom={12} />
+            ))}
+          </View>
+        ) : (
+          <View style={[styles.topListCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff' }]}>
+            {topTransactions.length > 0 ? topTransactions.map((tx) => (
+              <View key={tx.reference} style={styles.txRow}>
+                <View style={styles.txLeft}>
+                  <Text style={[styles.txService, { color: theme.text }]}>{tx.service}</Text>
+                  <Text style={[styles.txMeta, { color: theme.textSecondary }]}>{tx.reference}</Text>
+                  <Text style={[styles.txMeta, { color: theme.textSecondary }]}>{tx.date}</Text>
+                </View>
+                <View style={styles.txRight}>
+                  <Text style={[styles.txAmount, { color: theme.text }]}>{tx.amount.toLocaleString()}₦</Text>
+                  <Text style={[styles.txStatus, { color: tx.status === 'success' || tx.status === 'completed' ? '#10B981' : '#F59E0B' }]}>{tx.status}</Text>
+                </View>
+              </View>
+            )) : (
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No transaction history available.</Text>
+            )}
           </View>
         )}
 
@@ -164,6 +247,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
   },
+  breakdownCard: {
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 30,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
   barWrapper: {
     alignItems: 'center',
     flex: 1,
@@ -188,6 +281,107 @@ const styles = StyleSheet.create({
   barLabel: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  breakdownRow: {
+    marginBottom: 14,
+  },
+  breakdownLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  breakdownLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  breakdownCount: {
+    fontSize: 12,
+  },
+  breakdownBarTrack: {
+    height: 10,
+    backgroundColor: 'rgba(148,163,184,0.18)',
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  breakdownBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  breakdownAmount: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 28,
+  },
+  statusCard: {
+    minWidth: 96,
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  statusValue: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  statusLabel: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  topListCard: {
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 30,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  txRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148,163,184,0.12)',
+  },
+  txLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  txRight: {
+    alignItems: 'flex-end',
+  },
+  txService: {
+    fontSize: 14,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  txMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  txAmount: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  txStatus: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  emptyText: {
+    textAlign: 'center',
+    paddingVertical: 12,
+    fontSize: 13,
   },
   insightsSection: {
     marginTop: 10,

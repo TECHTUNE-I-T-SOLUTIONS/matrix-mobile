@@ -17,6 +17,8 @@ import ExamPinsScreen from './ExamPinsScreen';
 import InternetScreen from './InternetScreen';
 import BettingScreen from './BettingScreen';
 import InternationalBillsScreen from './InternationalBillsScreen';
+import AirtimeToWalletScreen from './AirtimeToWalletScreen';
+import BulkSmsScreen from './BulkSmsScreen';
 import WalletScreen from './WalletScreen';
 import TransactionsScreen from './TransactionsScreen';
 import NotificationsScreen from './NotificationsScreen';
@@ -65,6 +67,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ route }) => {
           <DashboardStack.Screen name="Internet" component={InternetScreen} />
           <DashboardStack.Screen name="Betting" component={BettingScreen} />
           <DashboardStack.Screen name="InternationalBills" component={InternationalBillsScreen} />
+          <DashboardStack.Screen name="AirtimeToWallet" component={AirtimeToWalletScreen} />
+          <DashboardStack.Screen name="BulkSms" component={BulkSmsScreen} />
           <DashboardStack.Screen name="Wallet" component={WalletScreen} />
           <DashboardStack.Screen name="Transactions" component={TransactionsScreen} />
           <DashboardStack.Screen name="Notifications" component={NotificationsScreen} />

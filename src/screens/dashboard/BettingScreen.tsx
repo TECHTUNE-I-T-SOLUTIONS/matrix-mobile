@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
+import CustomAlert from '../../components/CustomAlert';
 
 const BETTING_PROVIDERS = [
   { id: 'bet9ja', name: 'Bet9ja', color: '#1E40AF' },
@@ -29,15 +29,33 @@ const BettingScreen: React.FC = () => {
   const [accountId, setAccountId] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   const handlePurchase = async () => {
     if (!selectedProvider || !accountId || !amount) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
     if (parseFloat(amount) < 100) {
-      Alert.alert('Error', 'Minimum amount is ₦100');
+      showAlert('Error', 'Minimum amount is ₦100', 'error');
       return;
     }
 
@@ -51,41 +69,39 @@ const BettingScreen: React.FC = () => {
       });
 
       if (response.success) {
-        Alert.alert(
-          'Success',
-          'Betting account funded successfully!',
-          [
-            {
-              text: 'View Receipt',
-              onPress: () => navigation.navigate('Success', {
+        showAlert('Success', 'Betting account funded successfully!', 'success', [
+          {
+            text: 'View Receipt',
+            onPress: () =>
+              navigation.navigate('Success', {
                 data: {
                   serviceType: 'betting',
                   amount: parseFloat(amount),
                   recipient: accountId,
                   provider: selectedProvider,
                   transactionId: (response as any).transactionId || `TXN_${Date.now()}`,
-                }
-              })
-            },
-            {
-              text: 'Done',
-              onPress: () => navigation.goBack(),
-              style: 'cancel'
-            }
-          ]
-        );
+                },
+              }),
+          },
+          {
+            text: 'Done',
+            onPress: () => navigation.goBack(),
+            style: 'cancel',
+          },
+        ]);
       } else {
-        Alert.alert('Error', response.error || 'Purchase failed');
+        showAlert('Error', response.error || 'Purchase failed', 'error');
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Error', 'Failed to complete purchase');
+      showAlert('Error', 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
+    
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
         {/* Header */}
         <LinearGradient
@@ -188,6 +204,7 @@ const BettingScreen: React.FC = () => {
             )}
           </TouchableOpacity>
         </View>
+      <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
       </ScrollView>
     );
 };

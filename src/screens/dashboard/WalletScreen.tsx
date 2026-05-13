@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   ActivityIndicator,
   Modal,
   TextInput,
@@ -19,6 +18,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import { apiClient } from '../../services/apiClient';
 import ThemeToggle from '../../components/ThemeToggle';
+import CustomAlert from '../../components/CustomAlert';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 interface VirtualAccount {
   id: string;
@@ -78,6 +79,25 @@ const WalletScreen: React.FC = () => {
   const [creatingCard, setCreatingCard] = useState(false);
   const [processingPayout, setProcessingPayout] = useState(false);
 
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
+
   // Card creation form
   const [cardFormData, setCardFormData] = useState({
     brand: 'VISA',
@@ -131,7 +151,7 @@ const WalletScreen: React.FC = () => {
         const walletApiData = walletRes.data?.data; // Access the nested data
         if (!walletApiData || !walletApiData.wallet) {
           console.error('Invalid wallet response structure:', walletApiData);
-          Alert.alert('Error', 'Invalid wallet data structure');
+          showAlert('Error', 'Invalid wallet data structure', 'error');
           return;
         }
 
@@ -169,11 +189,11 @@ const WalletScreen: React.FC = () => {
         });
       } else {
         console.error('API call failures:', { walletRes, accountsRes, cardsRes });
-        Alert.alert('Error', 'Failed to load wallet data');
+        showAlert('Error', 'Failed to load wallet data', 'error');
       }
     } catch (error) {
       console.error('Error fetching wallet data:', error);
-      Alert.alert('Error', 'Failed to load wallet data');
+      showAlert('Error', 'Failed to load wallet data', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -188,7 +208,7 @@ const WalletScreen: React.FC = () => {
   // Card creation function
   const handleCreateCard = async () => {
     if (!cardFormData.amount || parseFloat(cardFormData.amount) < 1) {
-      Alert.alert('Error', 'Minimum amount is 1 USD');
+      showAlert('Error', 'Minimum amount is 1 USD', 'error');
       return;
     }
 
@@ -202,7 +222,7 @@ const WalletScreen: React.FC = () => {
       });
 
       if (response.success) {
-        Alert.alert('Success', 'Card created successfully!');
+        showAlert('Success', 'Card created successfully!', 'success');
         setShowCardModal(false);
         setCardFormData({
           brand: 'VISA',
@@ -216,11 +236,11 @@ const WalletScreen: React.FC = () => {
         }, 1000);
       } else {
         const errorMessage = response.error || 'Failed to create card';
-        Alert.alert('Error', errorMessage);
+        showAlert('Error', errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error creating card:', error);
-      Alert.alert('Error', 'Failed to create card');
+      showAlert('Error', 'Failed to create card', 'error');
     } finally {
       setCreatingCard(false);
     }
@@ -243,13 +263,13 @@ const WalletScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching banks:', error);
-      Alert.alert('Error', 'Failed to load banks');
+      showAlert('Error', 'Failed to load banks', 'error');
     }
   };
 
   const verifyAccount = async () => {
     if (!accountNumber.trim() || !selectedBank) {
-      Alert.alert('Error', 'Please enter account number and select bank');
+      showAlert('Error', 'Please enter account number and select bank', 'error');
       return;
     }
 
@@ -299,18 +319,18 @@ const WalletScreen: React.FC = () => {
           setAccountName(accountNameValue);
           setPayoutStep('amount');
           // Temporary alert to show what was extracted
-          Alert.alert('Account Verified', `Account Name: ${accountNameValue}`);
+          showAlert('Account Verified', `Account Name: ${accountNameValue}`, 'success');
         } else {
           console.error('Could not extract account name from response');
-          Alert.alert('Error', 'Account verification failed - no account name returned');
+          showAlert('Error', 'Account verification failed - no account name returned', 'error');
         }
       } else {
         console.log('Account verification failed:', response);
-        Alert.alert('Error', 'Account verification failed');
+        showAlert('Error', 'Account verification failed', 'error');
       }
     } catch (error) {
       console.error('Error verifying account:', error);
-      Alert.alert('Error', 'Failed to verify account');
+      showAlert('Error', 'Failed to verify account', 'error');
     } finally {
       setProcessingPayout(false);
     }
@@ -318,31 +338,33 @@ const WalletScreen: React.FC = () => {
 
   const calculateFee = async () => {
     if (!payoutAmount || parseFloat(payoutAmount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+      showAlert('Error', 'Please enter a valid amount', 'error');
       return;
     }
 
     const amount = parseFloat(payoutAmount);
     if (amount > (walletData?.wallet.balance || 0)) {
-      Alert.alert('Error', 'Insufficient balance');
+      showAlert('Error', 'Insufficient balance', 'error');
       return;
     }
 
     try {
       setProcessingPayout(true);
-      const response = await apiClient.post<{ amount: number; fee: number; total: number }>('/payscribe/payouts/fee', {
-        amount: amount,
-      });
+      const response = await apiClient.get<{ amount: number; fee: number; total: number }>(
+        `/payscribe/payouts/fee?amount=${encodeURIComponent(String(amount))}&currency=ngn`
+      );
 
       if (response.success && response.data) {
-        setFeeInfo(response.data);
+        const normalizedFee = (response.data as any)?.data || response.data;
+        console.log('Fee calculation response:', normalizedFee);
+        setFeeInfo(normalizedFee);
         setPayoutStep('confirm');
       } else {
-        Alert.alert('Error', 'Failed to calculate fee');
+        showAlert('Error', 'Failed to calculate fee', 'error');
       }
     } catch (error) {
       console.error('Error calculating fee:', error);
-      Alert.alert('Error', 'Failed to calculate fee');
+      showAlert('Error', 'Failed to calculate fee', 'error');
     } finally {
       setProcessingPayout(false);
     }
@@ -353,25 +375,27 @@ const WalletScreen: React.FC = () => {
 
     try {
       setProcessingPayout(true);
-      const response = await apiClient.post('/payscribe/payouts/initiate', {
+      const response = await apiClient.post('/payscribe/payouts/transfer', {
         amount: parseFloat(payoutAmount),
-        bank_code: selectedBank.code,
-        account_number: accountNumber,
+        bank: selectedBank.code,
+        account: accountNumber,
         account_name: accountName,
         narration: narration || 'Wallet withdrawal',
       });
 
+      const payoutData = (response.data as any)?.data || response.data;
+
       if (response.success) {
-        Alert.alert('Success', 'Payout initiated successfully!');
+        showAlert('Success', 'Payout initiated successfully!', 'success');
         setShowPayoutModal(false);
         resetPayoutForm();
         fetchWalletData();
       } else {
-        Alert.alert('Error', response.error || 'Failed to initiate payout');
+        showAlert('Error', response.error || payoutData?.message || 'Failed to initiate payout', 'error');
       }
     } catch (error) {
       console.error('Error initiating payout:', error);
-      Alert.alert('Error', 'Failed to initiate payout');
+      showAlert('Error', 'Failed to initiate payout', 'error');
     } finally {
       setProcessingPayout(false);
     }
@@ -392,9 +416,9 @@ const WalletScreen: React.FC = () => {
       await Clipboard.setString(text);
       setCopyingAccount(label);
       setTimeout(() => setCopyingAccount(null), 2000);
-      Alert.alert('Copied', `${label} copied to clipboard!`);
+      showAlert('Copied', `${label} copied to clipboard!`, 'success');
     } catch (error) {
-      Alert.alert('Error', 'Failed to copy to clipboard');
+      showAlert('Error', 'Failed to copy to clipboard', 'error');
     }
   };
 
@@ -482,8 +506,41 @@ const WalletScreen: React.FC = () => {
         </View>
 
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={styles.loadingSkeletonWrap}>
+            <View style={[styles.loadingHeroCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width="38%" height={14} marginBottom={10} />
+              <SkeletonLoader width="64%" height={28} marginBottom={10} />
+              <SkeletonLoader width="52%" height={14} />
+            </View>
+            <View style={styles.loadingStatsGrid}>
+              {Array.from({ length: 2 }).map((_, index) => (
+                <View key={index} style={[styles.loadingStatCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <SkeletonLoader width={36} height={36} borderRadius={18} marginBottom={12} />
+                  <SkeletonLoader width="58%" height={12} marginBottom={8} />
+                  <SkeletonLoader width="82%" height={18} />
+                </View>
+              ))}
+            </View>
+            <View style={styles.loadingSectionBlock}>
+              <SkeletonLoader width="24%" height={16} marginBottom={12} />
+              <SkeletonLoader width="100%" height={52} borderRadius={16} />
+            </View>
+            <View style={styles.loadingSectionBlock}>
+              <SkeletonLoader width="32%" height={16} marginBottom={12} />
+              {Array.from({ length: 3 }).map((_, index) => (
+                <View key={index} style={[styles.loadingHistoryRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <SkeletonLoader width={44} height={44} borderRadius={22} />
+                  <View style={{ flex: 1 }}>
+                    <SkeletonLoader width="62%" height={14} marginBottom={8} />
+                    <SkeletonLoader width="40%" height={12} />
+                  </View>
+                  <View style={{ alignItems: 'flex-end', width: 90 }}>
+                    <SkeletonLoader width="78%" height={14} marginBottom={8} />
+                    <SkeletonLoader width="56%" height={12} />
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
         ) : (
           <ScrollView
@@ -1050,6 +1107,12 @@ const WalletScreen: React.FC = () => {
 
               {payoutStep === 'confirm' && feeInfo && (
                 <>
+                  {(() => {
+                    const normalizedFee = (feeInfo as any)?.data || feeInfo;
+                    const feeAmount = Number(normalizedFee?.fee || 0);
+                    const totalAmount = Number(normalizedFee?.total || 0);
+
+                    return (
                   <View style={styles.confirmationCard}>
                     <Text style={[styles.confirmLabel, { color: theme.text }]}>Transfer Details</Text>
                     <View style={styles.confirmRow}>
@@ -1058,13 +1121,15 @@ const WalletScreen: React.FC = () => {
                     </View>
                     <View style={styles.confirmRow}>
                       <Text style={[styles.confirmText, { color: theme.textSecondary }]}>Fee:</Text>
-                      <Text style={[styles.confirmValue, { color: theme.text }]}>₦{feeInfo.fee.toLocaleString()}</Text>
+                      <Text style={[styles.confirmValue, { color: theme.text }]}>₦{feeAmount.toLocaleString()}</Text>
                     </View>
                     <View style={styles.confirmRow}>
                       <Text style={[styles.confirmText, { color: theme.textSecondary }]}>Total:</Text>
-                      <Text style={[styles.confirmValue, { color: theme.primary, fontWeight: 'bold' }]}>₦{feeInfo.total.toLocaleString()}</Text>
+                      <Text style={[styles.confirmValue, { color: theme.primary, fontWeight: 'bold' }]}>₦{totalAmount.toLocaleString()}</Text>
                     </View>
                   </View>
+                    );
+                  })()}
 
                   <TouchableOpacity
                     onPress={initiatePayout}
@@ -1126,6 +1191,15 @@ const WalletScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={closeAlert}
+      />
     </>
   );
 };
@@ -1183,6 +1257,42 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  loadingSkeletonWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  loadingHeroCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 16,
+  },
+  loadingStatsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 16,
+  },
+  loadingStatCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
+    alignItems: 'center',
+  },
+  loadingSectionBlock: {
+    marginBottom: 18,
+  },
+  loadingHistoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
   },
   loadingContainer: {
     flex: 1,

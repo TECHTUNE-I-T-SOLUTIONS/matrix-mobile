@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
+import CustomAlert from '../../components/CustomAlert';
 
 const ELECTRICITY_PROVIDERS = [
   { id: 'ikedc', name: 'IKEDC', description: 'Ikeja Electric' },
@@ -35,20 +35,54 @@ const ElectricityScreen: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [meterType, setMeterType] = useState<'prepaid' | 'postpaid'>('prepaid');
   const [loading, setLoading] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }> | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => {
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  };
+
+  const closeAlert = () => {
+    setAlertConfig((current) => ({ ...current, visible: false }));
+  };
 
   const handlePurchase = async () => {
     if (!selectedProvider || !meterNumber || !amount) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
     if (parseFloat(amount) < 1000) {
-      Alert.alert('Error', 'Minimum amount is ₦1,000');
+      showAlert('Error', 'Minimum amount is ₦1,000', 'error');
       return;
     }
 
     try {
       setLoading(true);
+      const validationResponse = await apiClient.post('/services/electricity/validate', {
+        meter_number: meterNumber,
+        disco: selectedProvider,
+        meter_type: meterType,
+      });
+
+      if (!validationResponse.success) {
+        showAlert('Validation Failed', validationResponse.error || 'Meter validation failed', 'error');
+        return;
+      }
+
+      const validationData = (validationResponse.data as any)?.data || validationResponse.data;
+      console.log('[ElectricityScreen] Validation data:', validationData);
+
       const response = await apiClient.post('/services/electricity/purchase', {
         meter_number: meterNumber,
         amount: parseFloat(amount),
@@ -56,10 +90,13 @@ const ElectricityScreen: React.FC = () => {
         meter_type: meterType,
       });
 
+      const responseData = (response.data as any)?.data || response.data;
+
       if (response.success) {
-        Alert.alert(
+        showAlert(
           'Success',
           'Electricity purchase successful!',
+          'success',
           [
             {
               text: 'View Receipt',
@@ -70,10 +107,10 @@ const ElectricityScreen: React.FC = () => {
                   provider: selectedProvider,
                   meterNumber: meterNumber,
                   meterType: meterType,
-                  transactionId: (response as any).transactionId || (response as any).data?.reference || `TXN_${Date.now()}`,
-                  status: (response as any).status || 'completed',
+                  transactionId: responseData?.transaction_id || responseData?.reference || `TXN_${Date.now()}`,
+                  status: responseData?.status || 'completed',
                   timestamp: new Date().toISOString(),
-                  ...(response as any).data && { apiResponse: (response as any).data },
+                  ...(responseData && { apiResponse: responseData }),
                 }
               })
             },
@@ -85,18 +122,19 @@ const ElectricityScreen: React.FC = () => {
           ]
         );
       } else {
-        Alert.alert('Error', response.error || 'Purchase failed');
+        showAlert('Error', response.error || 'Purchase failed', 'error');
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Error', 'Failed to complete purchase');
+      showAlert('Error', 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
+    <>
+      <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
         {/* Header */}
         <LinearGradient
           colors={[theme.primary, theme.primary + 'DD']}
@@ -254,7 +292,17 @@ const ElectricityScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    );
+
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={closeAlert}
+      />
+    </>
+  );
 };
 
 const styles = StyleSheet.create({

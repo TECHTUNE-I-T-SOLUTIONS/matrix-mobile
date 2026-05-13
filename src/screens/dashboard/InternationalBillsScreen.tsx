@@ -1,5 +1,4 @@
-﻿// src/screens/dashboard/InternationalBillsScreen.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -7,90 +6,229 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
+import CustomAlert from '../../components/CustomAlert';
 
-const INTERNATIONAL_SERVICES = [
-  { id: 'google-play', name: 'Google Play', description: 'Gift Cards & Credits', color: '#4285F4' },
-  { id: 'steam', name: 'Steam', description: 'Gaming Credits', color: '#171A21' },
-  { id: 'amazon', name: 'Amazon', description: 'Gift Cards', color: '#FF9900' },
-  { id: 'itunes', name: 'iTunes', description: 'App Store & Music', color: '#007AFF' },
-  { id: 'netflix', name: 'Netflix', description: 'Streaming Subscription', color: '#E50914' },
-  { id: 'spotify', name: 'Spotify', description: 'Music Subscription', color: '#1DB954' },
+interface InternationalProvider {
+  code: string;
+  name: string;
+  description?: string;
+  logo?: string;
+}
+
+interface InternationalProduct {
+  id: string;
+  name: string;
+  amount?: number;
+  receive_amount?: number;
+  currency?: string;
+  description?: string;
+}
+
+const COUNTRIES = [
+  { iso: 'NG', name: 'Nigeria', icon: 'flag' },
+  { iso: 'GH', name: 'Ghana', icon: 'flag' },
+  { iso: 'KE', name: 'Kenya', icon: 'flag' },
+  { iso: 'UG', name: 'Uganda', icon: 'flag' },
+  { iso: 'TZ', name: 'Tanzania', icon: 'flag' },
+  { iso: 'ZA', name: 'South Africa', icon: 'flag' },
 ];
 
 const InternationalBillsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
-  const [selectedService, setSelectedService] = useState('');
-  const [recipientEmail, setRecipientEmail] = useState('');
+  const [iso, setIso] = useState('NG');
+  const [providers, setProviders] = useState<InternationalProvider[]>([]);
+  const [products, setProducts] = useState<InternationalProduct[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<InternationalProvider | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<InternationalProduct | null>(null);
+  const [recipientPhone, setRecipientPhone] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [estimatedReceiveAmount, setEstimatedReceiveAmount] = useState<number | null>(null);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
+
+  useEffect(() => {
+    fetchProviders();
+  }, [iso]);
+
+  useEffect(() => {
+    if (selectedProvider) {
+      fetchProducts(selectedProvider.code);
+    } else {
+      setProducts([]);
+      setSelectedProduct(null);
+    }
+  }, [selectedProvider, iso]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (amount && selectedProvider) {
+        fetchRate();
+      } else {
+        setEstimatedReceiveAmount(null);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [amount, iso, selectedProvider]);
+
+  const normalizeArray = (data: any) => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.message?.details)) return data.message.details;
+    return [];
+  };
+
+  const fetchProviders = async () => {
+    try {
+      setLoadingProviders(true);
+      setSelectedProvider(null);
+      setSelectedProduct(null);
+      const response = await apiClient.get(`/services/international?action=providers&iso=${iso}`);
+      if (response.success) {
+        const providerList = normalizeArray(response.data).map((item: any) => ({
+          code: item.code || item.provider_code || item.id,
+          name: item.name || item.provider_name || item.code,
+          description: item.description,
+          logo: item.logo,
+        }));
+        setProviders(providerList);
+        setSelectedProvider(providerList[0] || null);
+      } else {
+        setProviders([]);
+        showAlert('Error', response.error || 'Failed to load providers', 'error');
+      }
+    } catch (error) {
+      console.error('Fetch providers error:', error);
+      showAlert('Error', 'Failed to load providers', 'error');
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
+
+  const fetchProducts = async (providerCode: string) => {
+    try {
+      setLoadingProducts(true);
+      setSelectedProduct(null);
+      const response = await apiClient.get(`/services/international?action=products&iso=${iso}&code=${providerCode}`);
+      if (response.success) {
+        const productList = normalizeArray(response.data).map((item: any) => ({
+          id: item.id || item.product_id || item.code,
+          name: item.name || item.product_name || item.title,
+          amount: Number(item.amount || item.price || item.send_amount || 0),
+          receive_amount: Number(item.receive_amount || 0),
+          currency: item.currency,
+          description: item.description,
+        }));
+        setProducts(productList);
+        setSelectedProduct(productList[0] || null);
+      } else {
+        setProducts([]);
+        showAlert('Error', response.error || 'Failed to load products', 'error');
+      }
+    } catch (error) {
+      console.error('Fetch products error:', error);
+      showAlert('Error', 'Failed to load products', 'error');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const fetchRate = async () => {
+    try {
+      const response = await apiClient.get(`/services/international?action=rate&iso=${iso}&amount=${amount}`);
+      if (response.success) {
+        const rateData = normalizeArray(response.data);
+        const firstItem = rateData[0] || response.data;
+        const receiveAmount = Number(firstItem?.receive_amount || firstItem?.details?.receive_amount || firstItem?.amount || 0);
+        setEstimatedReceiveAmount(receiveAmount || null);
+      }
+    } catch (error) {
+      console.warn('Rate fetch failed:', error);
+      setEstimatedReceiveAmount(null);
+    }
+  };
 
   const handlePurchase = async () => {
-    if (!selectedService || !recipientEmail || !amount) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!selectedProvider || !selectedProduct || !recipientPhone || !amount) {
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(recipientEmail)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
-
-    if (parseFloat(amount) < 10) {
-      Alert.alert('Error', 'Minimum amount is ₦10');
+    if (parseFloat(amount) < 1) {
+      showAlert('Error', 'Amount must be at least 1', 'error');
       return;
     }
 
     try {
       setLoading(true);
-      const response = await apiClient.post('/services/international-bills', {
-        service: selectedService,
-        recipient_email: recipientEmail,
+      const response = await apiClient.post('/services/international', {
+        iso,
+        code: selectedProvider.code,
+        product_id: selectedProduct.id,
+        phone: recipientPhone,
         amount: parseFloat(amount),
       });
 
       if (response.success) {
-        Alert.alert(
-          'Success',
-          'International bill payment successful!',
-          [
-            {
-              text: 'View Receipt',
-              onPress: () => navigation.navigate('Success', {
+        showAlert('Success', 'International bill payment successful!', 'success', [
+          {
+            text: 'View Receipt',
+            onPress: () =>
+              navigation.navigate('Success', {
                 data: {
                   serviceType: 'international',
                   amount: parseFloat(amount),
-                  recipient: recipientEmail,
-                  provider: selectedService,
-                  transactionId: (response as any).transactionId || (response as any).data?.reference || `TXN_${Date.now()}`,
-                  status: (response as any).status || 'completed',
+                  recipient: recipientPhone,
+                  provider: selectedProvider.code,
+                  country: iso,
+                  productName: selectedProduct.name,
+                  transactionId:
+                    (response as any).data?.transaction_id || (response as any).data?.reference || `TXN_${Date.now()}`,
+                  status: (response as any).data?.status || 'completed',
                   timestamp: new Date().toISOString(),
                   ...(response as any).data && { apiResponse: (response as any).data },
-                }
-              })
-            },
-            {
-              text: 'Done',
-              onPress: () => navigation.goBack(),
-              style: 'cancel'
-            }
-          ]
-        );
+                },
+              }),
+          },
+          {
+            text: 'Done',
+            onPress: () => navigation.goBack(),
+            style: 'cancel',
+          },
+        ]);
       } else {
-        Alert.alert('Error', response.error || 'Purchase failed');
+        showAlert('Error', response.error || 'Purchase failed', 'error');
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Error', 'Failed to complete purchase');
+      showAlert('Error', 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
     }
@@ -98,120 +236,145 @@ const InternationalBillsScreen: React.FC = () => {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
-        {/* Header */}
-        <LinearGradient
-          colors={[theme.primary, theme.primary + 'DD']}
-          style={styles.header}
-        >
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-          <View style={styles.headerContent}>
-            <View style={[styles.iconContainer, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-              <Ionicons name="earth" size={32} color="white" />
-            </View>
-            <Text style={styles.serviceTitle}>International Bills</Text>
-            <Text style={styles.serviceDescription}>
-              Pay for Google Play, Steam, Amazon, iTunes, Netflix, Spotify
-            </Text>
+      <LinearGradient colors={[theme.primary, theme.primary + 'DD']} style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color="white" />
+        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <View style={[styles.iconContainer, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+            <Ionicons name="earth" size={32} color="white" />
           </View>
-        </LinearGradient>
+          <Text style={styles.serviceTitle}>International Bills</Text>
+          <Text style={styles.serviceDescription}>
+            Send airtime, data, and bills internationally
+          </Text>
+        </View>
+      </LinearGradient>
 
-        {/* Form */}
-        <View style={styles.formContainer}>
-          <Text style={[styles.formTitle, { color: theme.text }]}>Select Service</Text>
+      <View style={styles.formContainer}>
+        <Text style={[styles.formTitle, { color: theme.text }]}>Select Country</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.countryScroll}>
+          {COUNTRIES.map((country) => (
+            <TouchableOpacity
+              key={country.iso}
+              style={[
+                styles.countryCard,
+                {
+                  backgroundColor: iso === country.iso ? theme.primary : theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+              onPress={() => setIso(country.iso)}
+            >
+              <Text style={[styles.countryName, { color: iso === country.iso ? '#ffffff' : theme.text }]}>
+                {country.name}
+              </Text>
+              <Text style={[styles.countryCode, { color: iso === country.iso ? 'rgba(255,255,255,0.8)' : theme.textSecondary }]}>
+                {country.iso}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-          {/* Service Selection */}
+        <Text style={[styles.formTitle, { color: theme.text }]}>Select Provider</Text>
+        {loadingProviders ? (
+          <ActivityIndicator size="small" color={theme.primary} />
+        ) : (
           <View style={styles.serviceGrid}>
-            {INTERNATIONAL_SERVICES.map((service) => (
+            {providers.map((service) => (
               <TouchableOpacity
-                key={service.id}
+                key={service.code}
                 style={[
                   styles.serviceCard,
                   {
-                    backgroundColor: selectedService === service.id ? service.color : theme.surface,
+                    backgroundColor: selectedProvider?.code === service.code ? theme.primary : theme.surface,
                     borderColor: theme.border,
                   },
                 ]}
-                onPress={() => setSelectedService(service.id)}
+                onPress={() => setSelectedProvider(service)}
               >
-                <Text
-                  style={[
-                    styles.serviceName,
-                    {
-                      color: selectedService === service.id ? '#ffffff' : theme.text,
-                    },
-                  ]}
-                >
+                <Text style={[styles.serviceName, { color: selectedProvider?.code === service.code ? '#ffffff' : theme.text }]}>
                   {service.name}
                 </Text>
-                <Text
-                  style={[
-                    styles.serviceCardDescription,
-                    {
-                      color: selectedService === service.id ? 'rgba(255,255,255,0.8)' : theme.textSecondary,
-                    },
-                  ]}
-                >
-                  {service.description}
+                <Text style={[styles.serviceCardDescription, { color: selectedProvider?.code === service.code ? 'rgba(255,255,255,0.8)' : theme.textSecondary }]}>
+                  {service.description || service.code}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
+        )}
 
-          {/* Recipient Email */}
-          <View style={styles.fieldContainer}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Recipient Email</Text>
-            <TextInput
-              style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
-              placeholder="recipient@example.com"
-              placeholderTextColor={theme.textSecondary}
-              value={recipientEmail}
-              onChangeText={setRecipientEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+        <Text style={[styles.formTitle, { color: theme.text }]}>Select Product</Text>
+        {loadingProducts ? (
+          <ActivityIndicator size="small" color={theme.primary} />
+        ) : (
+          <View style={styles.productGrid}>
+            {products.map((product) => (
+              <TouchableOpacity
+                key={product.id}
+                style={[
+                  styles.productCard,
+                  {
+                    backgroundColor: selectedProduct?.id === product.id ? theme.primary : theme.surface,
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={() => setSelectedProduct(product)}
+              >
+                <Text style={[styles.productName, { color: selectedProduct?.id === product.id ? '#ffffff' : theme.text }]}>
+                  {product.name}
+                </Text>
+                <Text style={[styles.productAmount, { color: selectedProduct?.id === product.id ? '#ffffff' : theme.primary }]}>
+                  ₦{Number(product.amount || 0).toLocaleString()}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        )}
 
-          {/* Amount */}
-          <View style={styles.fieldContainer}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Amount (₦)</Text>
-            <TextInput
-              style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
-              placeholder="1000"
-              placeholderTextColor={theme.textSecondary}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="numeric"
-            />
-          </View>
-
-          {/* Info Box */}
-          <View style={[styles.infoBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Ionicons name="information-circle" size={20} color={theme.primary} />
-            <Text style={[styles.infoText, { color: theme.text }]}>
-              The gift card or credit will be sent to the recipient's email address. Make sure the email address is correct.
-            </Text>
-          </View>
-
-          {/* Purchase Button */}
-          <TouchableOpacity
-            style={[styles.purchaseButton, { backgroundColor: theme.primary }]}
-            onPress={handlePurchase}
-            disabled={loading}
-          >
-            {loading ? (
-              <Text style={styles.purchaseText}>Processing...</Text>
-            ) : (
-              <Text style={styles.purchaseText}>Purchase International Bill</Text>
-            )}
-          </TouchableOpacity>
+        <View style={styles.fieldContainer}>
+          <Text style={[styles.fieldLabel, { color: theme.text }]}>Recipient Phone</Text>
+          <TextInput
+            style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+            placeholder="Recipient phone number"
+            placeholderTextColor={theme.textSecondary}
+            value={recipientPhone}
+            onChangeText={setRecipientPhone}
+            keyboardType="phone-pad"
+          />
         </View>
-      </ScrollView>
-    );
+
+        <View style={styles.fieldContainer}>
+          <Text style={[styles.fieldLabel, { color: theme.text }]}>Amount (₦)</Text>
+          <TextInput
+            style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+            placeholder="1000"
+            placeholderTextColor={theme.textSecondary}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="numeric"
+          />
+          {estimatedReceiveAmount !== null && (
+            <Text style={[styles.helperText, { color: theme.textSecondary }]}>Estimated receive amount: {estimatedReceiveAmount}</Text>
+          )}
+        </View>
+
+        <View style={[styles.infoBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="information-circle" size={20} color={theme.primary} />
+          <Text style={[styles.infoText, { color: theme.text }]}>Select a destination country, provider, and product before sending the payment.</Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.purchaseButton, { backgroundColor: theme.primary }]}
+          onPress={handlePurchase}
+          disabled={loading}
+        >
+          {loading ? <Text style={styles.purchaseText}>Processing...</Text> : <Text style={styles.purchaseText}>Purchase International Bill</Text>}
+        </TouchableOpacity>
+      </View>
+      <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
+    </ScrollView>
+  );
 };
 
 const styles = StyleSheet.create({
@@ -256,13 +419,36 @@ const styles = StyleSheet.create({
   formTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  countryScroll: {
+    marginBottom: 8,
+  },
+  countryCard: {
+    width: 120,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 12,
+    alignItems: 'center',
+  },
+  countryName: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  countryCode: {
+    fontSize: 12,
+    textAlign: 'center',
   },
   serviceGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   serviceCard: {
     flex: 1,
@@ -274,13 +460,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   serviceName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 4,
+    textAlign: 'center',
   },
   serviceCardDescription: {
     fontSize: 12,
     textAlign: 'center',
+  },
+  productGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
+  productCard: {
+    flex: 1,
+    minWidth: '45%',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  productName: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  productAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   fieldContainer: {
     marginBottom: 20,
@@ -296,6 +508,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
+  },
+  helperText: {
+    marginTop: 8,
+    fontSize: 12,
   },
   infoBox: {
     flexDirection: 'row',

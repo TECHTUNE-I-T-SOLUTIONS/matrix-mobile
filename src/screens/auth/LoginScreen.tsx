@@ -81,17 +81,15 @@ const LoginScreen: React.FC = () => {
           type: 'error',
         });
       } else {
-        // Decide where to navigate based on KYC and pending KYC data
+        // Let the session-driven root navigator switch to Main automatically.
         try {
           const pending = await AsyncStorage.getItem('kycPendingCustomer');
           if (result.kycRequired || pending) {
             setAlert({ visible: true, title: 'KYC Required', message: 'Please complete KYC verification to continue.', type: 'warning', buttons: undefined });
             navigation.navigate('KYC');
-          } else {
-            navigation.navigate('Main');
           }
         } catch (e) {
-          navigation.navigate('Main');
+          // Ignore storage errors here; the auth state update is still enough to continue.
         }
       }
     } catch (error) {

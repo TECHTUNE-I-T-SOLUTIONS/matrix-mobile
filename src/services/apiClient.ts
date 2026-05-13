@@ -2,6 +2,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.117:3000/api';
+const DEFAULT_GET_CACHE_TTL_MS = 60_000;
+
+type CachedEntry<T = any> = {
+  timestamp: number;
+  data: T;
+};
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -12,6 +18,7 @@ export interface ApiResponse<T = any> {
 
 class ApiClient {
   private baseURL: string;
+  private memoryCache = new Map<string, CachedEntry>();
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
@@ -37,8 +44,18 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     try {
+      const method = (options.method || 'GET').toUpperCase();
       const url = `${this.baseURL}${endpoint}`;
       const token = await this.getAuthToken();
+      const cacheKey = `${method}:${endpoint}:${token || 'anonymous'}`;
+      const shouldCache = method === 'GET';
+
+      if (shouldCache) {
+        const cached = this.memoryCache.get(cacheKey) || await this.readCache<T>(cacheKey);
+        if (cached && Date.now() - cached.timestamp < this.getCacheTtlMs(endpoint)) {
+          return { success: true, data: cached.data };
+        }
+      }
       
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -95,10 +112,18 @@ class ApiClient {
         };
       }
 
-      return {
+      const result = {
         success: true,
         data,
       };
+
+      if (shouldCache) {
+        const cachedEntry: CachedEntry<T> = { timestamp: Date.now(), data };
+        this.memoryCache.set(cacheKey, cachedEntry);
+        this.writeCache(cacheKey, cachedEntry).catch(() => undefined);
+      }
+
+      return result;
     } catch (error) {
       return {
         success: false,
@@ -137,6 +162,55 @@ class ApiClient {
 
   async delete<T>(endpoint: string, headers?: Record<string, string>): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE', headers });
+  }
+
+  private getCacheTtlMs(endpoint: string): number {
+    if (endpoint.includes('/notifications/unread-count')) return 15_000;
+    if (endpoint.includes('/notifications')) return 30_000;
+    if (endpoint.includes('/price-comparison')) return 5 * 60_000;
+    if (endpoint.includes('/spend-analytics')) return 5 * 60_000;
+    if (endpoint.includes('/payscribe/analytics')) return 5 * 60_000;
+    if (endpoint.includes('/payscribe/reports')) return 5 * 60_000;
+    if (endpoint.includes('/reports')) return 5 * 60_000;
+    if (endpoint.includes('/user/profile')) return 2 * 60_000;
+    if (endpoint.includes('/payscribe/wallet')) return 30_000;
+    if (endpoint.includes('/payscribe/virtual-accounts')) return 60_000;
+    if (endpoint.includes('/payscribe/cards')) return 60_000;
+    if (endpoint.includes('/services/data/plans')) return 10 * 60_000;
+    return DEFAULT_GET_CACHE_TTL_MS;
+  }
+
+  private async readCache<T>(key: string): Promise<CachedEntry<T> | null> {
+    try {
+      const raw = await AsyncStorage.getItem(`api-cache:${key}`);
+      if (!raw) return null;
+      return JSON.parse(raw) as CachedEntry<T>;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeCache<T>(key: string, entry: CachedEntry<T>): Promise<void> {
+    try {
+      await AsyncStorage.setItem(`api-cache:${key}`, JSON.stringify(entry));
+    } catch {
+      // ignore cache write failures
+    }
+  }
+
+  async clearCache(prefix?: string): Promise<void> {
+    try {
+      this.memoryCache.clear();
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter((key) => key.startsWith('api-cache:'));
+      if (prefix) {
+        await AsyncStorage.multiRemove(cacheKeys.filter((key) => key.includes(prefix)));
+      } else {
+        await AsyncStorage.multiRemove(cacheKeys);
+      }
+    } catch {
+      // ignore cache clear failures
+    }
   }
 
   // Upload FormData (files) without forcing JSON content-type

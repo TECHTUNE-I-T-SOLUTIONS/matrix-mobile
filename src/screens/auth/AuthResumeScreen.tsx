@@ -123,8 +123,6 @@ const AuthResumeScreen: React.FC = () => {
         const pending = await AsyncStorage.getItem('kycPendingCustomer');
         if (result.kycRequired || pending) {
           navigation.replace('KYC');
-        } else {
-          navigation.replace('Main');
         }
       } else {
         Alert.alert('Authentication Failed', result.error || 'Invalid password');
@@ -159,7 +157,6 @@ const AuthResumeScreen: React.FC = () => {
         await updateLastLogin();
         // Complete resume authentication
         await completeResumeAuth();
-        navigation.replace('Main');
       } else {
         const error = await response.json();
         Alert.alert('Authentication Failed', error.error || 'Invalid PIN');
@@ -196,7 +193,6 @@ const AuthResumeScreen: React.FC = () => {
           await updateLastLogin();
           // Complete resume authentication
           await completeResumeAuth();
-          navigation.replace('Main');
         } else {
           Alert.alert('Error', 'Biometric verification failed');
         }

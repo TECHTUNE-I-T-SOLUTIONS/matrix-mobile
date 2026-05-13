@@ -1,32 +1,51 @@
 // src/screens/dashboard/RewardsScreen.tsx
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  RefreshControl,
+} from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useRewards } from '../../hooks/useRewards';
+import { useWalletBalance } from '../../contexts/WalletBalanceContext';
 import SpinWheelModal from './SpinWheelModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import CustomAlert from '../../components/CustomAlert';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
+
+type RewardTx = {
+  id: string;
+  type: string;
+  amount: number;
+  description: string;
+  created_at: string;
+};
 
 const RewardsScreen = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation<any>();
-  const { rewardBalance, transactions, loading, spinReward, fetchRewards, canSpinNow, nextSpinAt } = useRewards();
+  const { walletBalance: walletState, refreshBalance, updateBalance } = useWalletBalance();
+  const { totalReward, transactions, loading, spinReward, fetchRewards, canSpinNow, nextSpinAt } = useRewards();
   const [showSpinModal, setShowSpinModal] = useState(false);
   const [alertVisible, setAlertVisible] = useState(false);
   const [nextSpinCountdown, setNextSpinCountdown] = useState('');
   const [alertData, setAlertData] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' | 'warning' | 'info' });
+  const [refreshing, setRefreshing] = useState(false);
+  const [optimisticBalance, setOptimisticBalance] = useState<number | null>(null);
+  const [optimisticTransactions, setOptimisticTransactions] = useState<RewardTx[]>([]);
 
-  // Refresh data when screen comes into focus (empty deps array to prevent infinite loops)
   useFocusEffect(
     React.useCallback(() => {
       fetchRewards();
-    }, [])
+      refreshBalance();
+    }, [fetchRewards, refreshBalance])
   );
 
-  // Update countdown timer
   React.useEffect(() => {
     if (!canSpinNow && nextSpinAt) {
       const updateCountdown = () => {
@@ -41,7 +60,6 @@ const RewardsScreen = () => {
           setNextSpinCountdown(`${hours}h ${minutes}m ${seconds}s`);
         } else {
           setNextSpinCountdown('');
-          // Refresh to update canSpinNow
           fetchRewards();
         }
       };
@@ -50,22 +68,44 @@ const RewardsScreen = () => {
       const interval = setInterval(updateCountdown, 1000);
       return () => clearInterval(interval);
     }
-  }, [canSpinNow, nextSpinAt]);
+  }, [canSpinNow, nextSpinAt, fetchRewards]);
 
-  const handleSpinComplete = async () => {
-    // Call the spin reward API
-    const result = await spinReward();
-    if (result > 0) {
-      // Refresh rewards data
+  const handleRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchRewards(), refreshBalance()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchRewards, refreshBalance]);
+
+  const handleSpinComplete = async (amount: number): Promise<number | void> => {
+    setOptimisticBalance(Number(walletState.balance || 0) + amount);
+    setOptimisticTransactions((prev) => [
+      {
+        id: `optimistic-${Date.now()}`,
+        type: 'spin',
+        amount,
+        description: 'Daily spin wheel reward',
+        created_at: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    const result = await spinReward(amount);
+    if (result && typeof result === 'object') {
+      updateBalance(result.newBalance);
       await fetchRewards();
+      await refreshBalance();
     }
 
-    return result;
+    setOptimisticBalance(null);
+    setOptimisticTransactions([]);
+    return result && typeof result === 'object' ? result.amount : 0;
   };
 
   const handleSpinCardPress = () => {
     if (!canSpinNow) {
-      // Show countdown alert instead
       setAlertData({
         title: 'Come Back Tomorrow!',
         message: `You can spin again in:\n\n${nextSpinCountdown || 'calculating...'}`,
@@ -77,7 +117,7 @@ const RewardsScreen = () => {
     }
   };
 
-  const renderTransaction = ({ item }: any) => {
+  const renderTransaction = ({ item }: { item: RewardTx }) => {
     const isPositive = item.amount > 0;
     return (
       <View style={[styles.transactionItem, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)' }]}>
@@ -97,11 +137,14 @@ const RewardsScreen = () => {
           </Text>
         </View>
         <Text style={[styles.transactionAmount, { color: isPositive ? '#10B981' : theme.text }]}>
-          +{item.amount}₦
+          +₦{item.amount}
         </Text>
       </View>
     );
   };
+
+  const walletDisplay = optimisticBalance ?? walletState.balance;
+  const mergedTransactions = [...optimisticTransactions, ...transactions];
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -120,19 +163,23 @@ const RewardsScreen = () => {
         </View>
 
         <View style={styles.balanceContainer}>
-          <Text style={styles.balanceLabel}>Total Reward Balance</Text>
-          {loading ? (
+          <Text style={styles.balanceLabel}>Wallet Balance</Text>
+          {loading || walletState.isLoading ? (
             <Text style={styles.balanceAmount}>Loading...</Text>
           ) : (
-            <Text style={styles.balanceAmount}>{(rewardBalance || 0).toLocaleString()}₦</Text>
+            <Text style={styles.balanceAmount}>₦{Number(walletDisplay || 0).toLocaleString()}</Text>
           )}
         </View>
       </LinearGradient>
 
-      <View style={styles.content}>
-        <TouchableOpacity 
-          style={[styles.actionCard, !canSpinNow && styles.actionCardDisabled]} 
-          onPress={handleSpinCardPress} 
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} />}
+      >
+        <TouchableOpacity
+          style={[styles.actionCard, !canSpinNow && styles.actionCardDisabled]}
+          onPress={handleSpinCardPress}
           activeOpacity={0.8}
         >
           <LinearGradient
@@ -143,22 +190,13 @@ const RewardsScreen = () => {
           >
             <View style={styles.actionCardContent}>
               <View>
-                <Text style={styles.actionCardTitle}>
-                  {canSpinNow ? 'Daily Spin Wheel' : 'Come Back Later'}
-                </Text>
+                <Text style={styles.actionCardTitle}>{canSpinNow ? 'Daily Spin Wheel' : 'Come Back Later'}</Text>
                 <Text style={styles.actionCardSubtitle}>
-                  {canSpinNow 
-                    ? 'Spin daily and win rewards' 
-                    : `Spin again in ${nextSpinCountdown || 'calculating...'}`
-                  }
+                  {canSpinNow ? 'Spin daily and win rewards' : `Spin again in ${nextSpinCountdown || 'calculating...'}`}
                 </Text>
               </View>
               <View style={styles.actionCardIcon}>
-                <Ionicons 
-                  name={canSpinNow ? "color-filter" : "time"} 
-                  size={32} 
-                  color="#fff" 
-                />
+                <Ionicons name={canSpinNow ? 'color-filter' : 'time'} size={32} color="#fff" />
               </View>
             </View>
           </LinearGradient>
@@ -166,21 +204,31 @@ const RewardsScreen = () => {
 
         <View style={styles.historySection}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Rewards</Text>
+          <Text style={[styles.totalEarnedText, { color: theme.textSecondary }]}>
+            Total earned: ₦{(totalReward || 0).toLocaleString()}
+          </Text>
           {loading ? (
-            <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
-          ) : transactions.length === 0 ? (
+            <View style={styles.loadingSkeletonWrap}>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <View key={index} style={[styles.loadingRewardRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)' }]}>
+                  <SkeletonLoader width={44} height={44} borderRadius={22} />
+                  <View style={{ flex: 1 }}>
+                    <SkeletonLoader width="52%" height={14} marginBottom={8} />
+                    <SkeletonLoader width="36%" height={12} />
+                  </View>
+                  <SkeletonLoader width={64} height={16} />
+                </View>
+              ))}
+            </View>
+          ) : mergedTransactions.length === 0 ? (
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No reward transactions yet.</Text>
           ) : (
-            <FlatList
-              data={transactions}
-              keyExtractor={(item) => item.id}
-              renderItem={renderTransaction}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContainer}
-            />
+            <View style={styles.listContainer}>
+              {mergedTransactions.map((item) => renderTransaction({ item }))}
+            </View>
           )}
         </View>
-      </View>
+      </ScrollView>
 
       <SpinWheelModal
         visible={showSpinModal}
@@ -201,9 +249,7 @@ const RewardsScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   headerGradient: {
     paddingTop: 60,
     paddingBottom: 40,
@@ -217,115 +263,60 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 20,
   },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  balanceContainer: {
+  backButton: { padding: 8 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  balanceContainer: { alignItems: 'center' },
+  balanceLabel: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 4 },
+  balanceAmount: { fontSize: 40, fontWeight: '800', color: '#fff' },
+  content: { flex: 1, paddingHorizontal: 20, marginTop: -20 },
+  contentContainer: { paddingBottom: 24, flexGrow: 1 },
+  actionCard: { borderRadius: 20, overflow: 'hidden' },
+  actionCardDisabled: { opacity: 0.8 },
+  actionCardGradient: { padding: 20 },
+  actionCardContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  actionCardTitle: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 4 },
+  actionCardSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
+  actionCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  balanceLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 4,
-  },
-  balanceAmount: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: '#fff',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    marginTop: -20,
-  },
-  actionCard: {
-    borderRadius: 20,
-    elevation: 8,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    marginBottom: 24,
-  },
-  actionCardDisabled: {
-    opacity: 0.8,
-  },
-  actionCardGradient: {
-    borderRadius: 20,
-    padding: 20,
-  },
-  actionCardContent: {
+  historySection: { flex: 1, marginTop: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  totalEarnedText: { fontSize: 13, marginBottom: 12 },
+  loadingSkeletonWrap: { marginTop: 16 },
+  loadingRewardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  actionCardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  actionCardSubtitle: {
-    fontSize: 14,
-    color: '#f0fdf4',
-  },
-  actionCardIcon: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 16,
     padding: 12,
-  },
-  historySection: {
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  listContainer: {
-    paddingBottom: 20,
+    marginBottom: 12,
   },
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
     borderRadius: 16,
+    padding: 12,
     marginBottom: 12,
   },
   transactionIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    alignItems: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
-    marginRight: 16,
+    alignItems: 'center',
+    marginRight: 12,
+    backgroundColor: 'rgba(16,185,129,0.12)',
   },
-  transactionDetails: {
-    flex: 1,
-  },
-  transactionType: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  transactionDate: {
-    fontSize: 12,
-  },
-  transactionAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 20,
-    fontSize: 14,
-  },
+  transactionDetails: { flex: 1 },
+  transactionType: { fontSize: 15, fontWeight: '700' },
+  transactionDate: { fontSize: 12, marginTop: 2 },
+  transactionAmount: { fontSize: 15, fontWeight: '800' },
+  listContainer: { paddingBottom: 24 },
+  emptyText: { fontSize: 14 },
 });
 
 export default RewardsScreen;

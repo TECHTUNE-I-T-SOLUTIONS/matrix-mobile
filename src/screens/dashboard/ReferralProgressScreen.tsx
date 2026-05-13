@@ -1,11 +1,12 @@
 // src/screens/dashboard/ReferralProgressScreen.tsx
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useReferralProgress } from '../../hooks/useReferralProgress';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 const ReferralProgressScreen = () => {
   const { theme, isDark } = useTheme();
@@ -90,7 +91,18 @@ const ReferralProgressScreen = () => {
       <View style={styles.content}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Your Network</Text>
         {loading ? (
-          <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
+          <View style={styles.loadingSkeletonWrap}>
+            {Array.from({ length: 4 }).map((_, index) => (
+              <View key={index} style={[styles.loadingReferralRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)' }]}>
+                <SkeletonLoader width={44} height={44} borderRadius={22} />
+                <View style={{ flex: 1 }}>
+                  <SkeletonLoader width="52%" height={14} marginBottom={8} />
+                  <SkeletonLoader width="66%" height={12} marginBottom={6} />
+                  <SkeletonLoader width="38%" height={12} />
+                </View>
+              </View>
+            ))}
+          </View>
         ) : referrals.length === 0 ? (
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>You haven't referred anyone yet.</Text>
         ) : (
@@ -186,6 +198,17 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 20,
+  },
+  loadingSkeletonWrap: {
+    marginTop: 20,
+  },
+  loadingReferralRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,

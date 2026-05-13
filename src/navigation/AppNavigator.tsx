@@ -39,83 +39,30 @@ const AppNavigator: React.FC = () => {
       isReady,
     });
   }, [session.isAuthenticated, session.requiresResumeAuth, session.isLoading, isReady]);
-
-  // Determine initial route - ALWAYS start with Splash
-  // Let the SplashScreen handle navigation based on session state
-  let initialRoute: keyof RootStackParamList = 'Splash';
-
-  console.log('[AppNavigator] Calculated initialRoute:', initialRoute, 'for session:', {
-    isAuthenticated: session.isAuthenticated,
-    requiresResumeAuth: session.requiresResumeAuth,
-    isLoading: session.isLoading,
-  });
+  if (session.isLoading || !isReady) {
+    return (
+      <NavigationContainer ref={navigationRef}>
+        <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }}>
+          <Stack.Screen name="Splash" component={SplashScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
+  }
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator
-        initialRouteName={initialRoute}
-        screenOptions={{
-          headerShown: false,
-          gestureEnabled: true,
-        }}
-      >
+      <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: true }}>
         {!session.isAuthenticated && !session.requiresResumeAuth ? (
           <>
-            <Stack.Screen
-              name="Splash"
-              component={SplashScreen}
-              options={{
-                gestureEnabled: false,
-              }}
-            />
-            <Stack.Screen
-              name="Auth"
-              component={AuthNavigator}
-              options={{
-                gestureEnabled: false,
-              }}
-            />
-            <Stack.Screen
-              name="KYC"
-              component={KYCScreen}
-              options={{
-                gestureEnabled: false,
-              }}
-            />
+            <Stack.Screen name="Auth" component={AuthNavigator} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="KYC" component={KYCScreen} options={{ gestureEnabled: false }} />
           </>
         ) : session.requiresResumeAuth ? (
-          <>
-            <Stack.Screen
-              name="Splash"
-              component={SplashScreen}
-              options={{
-                gestureEnabled: false,
-              }}
-            />
-            <Stack.Screen
-              name="AuthResume"
-              component={AuthResumeScreen}
-              options={{
-                gestureEnabled: false,
-              }}
-            />
-          </>
+          <Stack.Screen name="AuthResume" component={AuthResumeScreen} options={{ gestureEnabled: false }} />
         ) : (
           <>
-            <Stack.Screen
-              name="Main"
-              component={DashboardLayout}
-              options={{
-                gestureEnabled: false,
-              }}
-            />
-            <Stack.Screen
-              name="KYC"
-              component={KYCScreen}
-              options={{
-                gestureDirection: 'horizontal-inverted',
-              }}
-            />
+            <Stack.Screen name="Main" component={DashboardLayout} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="KYC" component={KYCScreen} options={{ gestureDirection: 'horizontal-inverted' }} />
           </>
         )}
       </Stack.Navigator>

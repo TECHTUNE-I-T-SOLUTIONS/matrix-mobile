@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Text,
   Image,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   Modal,
@@ -16,7 +15,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import * as Application from 'expo-application'
-import { Linking } from 'react-native'
 import ApkInstaller from '../../components/ApkInstaller'
 import { isAutoCheckEnabled } from '../../hooks/useAutoUpdateCheck'
 import { useSession } from '../../contexts/SessionContext';
@@ -25,6 +23,7 @@ import ThemeToggle from '../../components/ThemeToggle';
 import CustomAlert from '../../components/CustomAlert';
 import { useNavigation } from '@react-navigation/native';
 import { isUpdateAvailable } from '../../utils/versionUtils';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 interface ProfileData {
   id: string;
@@ -52,6 +51,24 @@ const ProfileScreen: React.FC = () => {
   const [latestRelease, setLatestRelease] = useState<any>(null)
   const [proxiedAvatarUri, setProxiedAvatarUri] = useState<string | null>(null)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   const fetchProfileData = async () => {
     try {
@@ -60,7 +77,7 @@ const ProfileScreen: React.FC = () => {
         // fetch user's transactions to determine count (same logic as TransactionsScreen)
         let totalTx = 0
         try {
-          const txRes = await apiClient.post('/transactions/all', {})
+          const txRes = await apiClient.get('/transactions/all')
           if (txRes && txRes.success && txRes.data) {
             const list = (txRes.data as any).data?.transactions || []
             totalTx = Array.isArray(list) ? list.length : 0
@@ -82,7 +99,7 @@ const ProfileScreen: React.FC = () => {
           kycStatus: user.kyc_verified ? 'verified' : 'pending',
           accountBalance: parseFloat(user.wallet_balance || 0),
           totalTransactions: totalTx,
-          referralCode: 'PROSPER2024',
+          referralCode: 'MATRIX1234',
         };
         setProfileData(profileData);
       }
@@ -100,7 +117,7 @@ const ProfileScreen: React.FC = () => {
           kycStatus: (session.user as any).kyc_verified ? 'verified' : 'pending',
           accountBalance: parseFloat((session.user as any).wallet_balance || 0),
           totalTransactions: 0,
-          referralCode: 'PROSPER2024',
+          referralCode: 'MATRIX1234',
         };
         setProfileData(fallbackData);
       }
@@ -167,14 +184,11 @@ const ProfileScreen: React.FC = () => {
   }
 
   const handleInstallUpdate = async () => {
-    // Prefer direct asset download if provided
-    const asset = latestRelease?.assets?.[0]
-    const url = asset?.browser_download_url || `https://github.com/TECHTUNE-I-T-SOLUTIONS/matrix-mobile/releases/latest`
-    try {
-      await Linking.openURL(url)
-    } catch (err) {
-      console.warn('Failed to open update URL', err)
-    }
+    showAlert(
+      'Download App',
+      'Tap Update App below to download and install the latest APK directly on this device.',
+      'info'
+    )
   }
 
   const onRefresh = () => {
@@ -190,10 +204,9 @@ const ProfileScreen: React.FC = () => {
     setShowLogoutModal(false);
     try {
       await signOut();
-      navigation.navigate('AuthChoice');
     } catch (error) {
       console.error('Logout error:', error);
-      Alert.alert('Error', 'Failed to logout. Please try again.');
+      showAlert('Error', 'Failed to logout. Please try again.', 'error');
     }
   };
 
@@ -254,8 +267,32 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={styles.loadingSkeletonWrap}>
+            <View style={[styles.loadingSkeletonCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={styles.loadingAvatarRow}>
+                <SkeletonLoader width={76} height={76} borderRadius={38} />
+                <View style={{ flex: 1 }}>
+                  <SkeletonLoader width="58%" height={18} marginBottom={10} />
+                  <SkeletonLoader width="78%" height={14} marginBottom={8} />
+                  <SkeletonLoader width="44%" height={14} />
+                </View>
+              </View>
+              <View style={styles.loadingActionRow}>
+                <SkeletonLoader width={110} height={36} borderRadius={18} />
+                <SkeletonLoader width={110} height={36} borderRadius={18} />
+              </View>
+            </View>
+
+            {Array.from({ length: 4 }).map((_, index) => (
+              <View key={index} style={[styles.loadingMenuRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <SkeletonLoader width={40} height={40} borderRadius={20} />
+                <View style={{ flex: 1 }}>
+                  <SkeletonLoader width="52%" height={14} marginBottom={8} />
+                  <SkeletonLoader width="34%" height={12} />
+                </View>
+                <SkeletonLoader width={20} height={20} borderRadius={10} />
+              </View>
+            ))}
           </View>
         ) : (
           <View style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -320,7 +357,7 @@ const ProfileScreen: React.FC = () => {
                       {updateAvailable && (
                         <>
                           <TouchableOpacity onPress={handleInstallUpdate}>
-                            <Text style={{ color: '#047603', fontWeight: '700' }}>Install</Text>
+                            <Text style={{ color: '#047603', fontWeight: '700' }}>Update Info</Text>
                           </TouchableOpacity>
                           <ApkInstaller />
                         </>
@@ -505,6 +542,17 @@ const ProfileScreen: React.FC = () => {
 
                   <TouchableOpacity
                     style={[styles.menuItem, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    onPress={() => navigation.navigate('Referrals')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons name="people" size={20} color={theme.primary} />
+                      <Text style={[styles.menuText, { color: theme.text }]}>Referrals</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.menuItem, { backgroundColor: theme.surface, borderColor: theme.border }]}
                     onPress={() => navigation.navigate('SpendAnalytics')}
                   >
                     <View style={styles.menuContent}>
@@ -673,14 +721,15 @@ const ProfileScreen: React.FC = () => {
       <CustomAlert
         visible={showUpdateModal}
         title="Update available"
-        message="A new release is available. Open Profile → Update to download."
+        message="A new release is available. Use the Update App button to download it directly on this device."
         type="info"
         buttons={[
           { text: 'LATER', onPress: () => setShowUpdateModal(false), style: 'cancel' },
-          { text: 'OPEN', onPress: () => { setShowUpdateModal(false); handleInstallUpdate() } },
+          { text: 'OK', onPress: () => { setShowUpdateModal(false); handleInstallUpdate() } },
         ]}
         onClose={() => setShowUpdateModal(false)}
       />
+      <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
     </>
   );
 };
@@ -713,6 +762,36 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingSkeletonWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  loadingSkeletonCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 14,
+  },
+  loadingAvatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 18,
+  },
+  loadingActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  loadingMenuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
   },
   profileCard: {
     flexDirection: 'row',

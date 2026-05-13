@@ -1,4 +1,4 @@
-// src/screens/dashboard/DashboardScreen.tsx
+﻿// src/screens/dashboard/DashboardScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -23,6 +23,7 @@ import ThemeToggle from '../../components/ThemeToggle';
 import AnnouncementsBanner from '../../components/AnnouncementsBanner';
 import CustomAlert from '../../components/CustomAlert';
 import SubscriptionReminderBanner from '../../components/SubscriptionReminderBanner';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 48) / 2;
@@ -114,7 +115,7 @@ const DashboardScreen: React.FC = () => {
 
       // Fetch remaining data in parallel for better performance
       const [transactionsRes, notificationsRes, unreadCountRes, accountsRes] = await Promise.all([
-        apiClient.post('/transactions/all', { limit: 5 }),
+        apiClient.get('/transactions/all?limit=5'),
         apiClient.get('/notifications'),
         apiClient.get('/notifications/unread-count'),
         apiClient.get('/payscribe/virtual-accounts')
@@ -306,8 +307,63 @@ const DashboardScreen: React.FC = () => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
+            <View style={[styles.bannerSkeleton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width="45%" height={14} marginBottom={12} />
+              <SkeletonLoader width="75%" height={26} marginBottom={10} />
+              <SkeletonLoader width="60%" height={14} />
+            </View>
+
+            <View style={[styles.quickActionsSkeleton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <View key={index} style={styles.quickActionSkeletonItem}>
+                  <SkeletonLoader width={48} height={48} borderRadius={24} marginBottom={10} />
+                  <SkeletonLoader width="70%" height={12} />
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.sectionSkeletonBlock}>
+              <SkeletonLoader width="28%" height={16} marginBottom={12} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.vaScrollContainer}>
+                {Array.from({ length: 2 }).map((_, index) => (
+                  <View key={index} style={[styles.vaSkeletonCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <SkeletonLoader width="55%" height={12} marginBottom={18} />
+                    <SkeletonLoader width="75%" height={20} marginBottom={10} />
+                    <SkeletonLoader width="45%" height={12} />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.sectionSkeletonBlock}>
+              <SkeletonLoader width="20%" height={16} marginBottom={12} />
+              <View style={styles.servicesSkeletonGrid}>
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <View key={index} style={[styles.serviceSkeletonCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <SkeletonLoader width={36} height={36} borderRadius={18} marginBottom={10} />
+                    <SkeletonLoader width="70%" height={12} />
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.sectionSkeletonBlock}>
+              <SkeletonLoader width="34%" height={16} marginBottom={12} />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <View key={index} style={[styles.dashboardTransactionSkeletonRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <SkeletonLoader width={44} height={44} borderRadius={22} />
+                  <View style={{ flex: 1 }}>
+                    <SkeletonLoader width="60%" height={14} marginBottom={8} />
+                    <SkeletonLoader width="38%" height={12} />
+                  </View>
+                  <View style={{ alignItems: 'flex-end', width: 84 }}>
+                    <SkeletonLoader width="78%" height={14} marginBottom={8} />
+                    <SkeletonLoader width="55%" height={12} />
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>
@@ -581,6 +637,57 @@ const styles = StyleSheet.create({
     position: 'relative',
     padding: 4,
   },
+  loadingSkeletonWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  loadingHero: {
+    borderRadius: 24,
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    padding: 20,
+    marginBottom: 20,
+  },
+  quickActionSkeletonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 24,
+  },
+  quickActionSkeletonCard: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    padding: 14,
+    alignItems: 'center',
+  },
+  sectionSkeleton: {
+    marginBottom: 24,
+  },
+  cardSkeletonGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cardSkeleton: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    padding: 16,
+  },
+  dashboardTransactionSkeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148,163,184,0.12)',
+  },
+  transactionSkeletonDetails: {
+    flex: 1,
+  },
+  transactionSkeletonAmount: {
+    width: 88,
+    alignItems: 'flex-end',
+  },
   notificationBadge: {
     position: 'absolute',
     top: 0,
@@ -614,6 +721,58 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 100,
+  },
+  bannerSkeleton: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 16,
+  },
+  quickActionsSkeleton: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 18,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  quickActionSkeletonItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  sectionSkeletonBlock: {
+    marginBottom: 22,
+  },
+  vaSkeletonCard: {
+    width: vaCardWidth,
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 18,
+    marginRight: 16,
+  },
+  servicesSkeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  serviceSkeletonCard: {
+    width: cardWidth,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  transactionSkeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
   },
   errorContainer: {
     flex: 1,

@@ -19,6 +19,8 @@ export type RootStackParamList = {
   Internet: undefined;
   Betting: undefined;
   InternationalBills: undefined;
+  AirtimeToWallet: undefined;
+  BulkSms: undefined;
   Wallet: undefined;
   Transactions: undefined;
   Notifications: undefined;
@@ -65,6 +67,8 @@ export type DashboardStackParamList = {
   Internet: undefined;
   Betting: undefined;
   InternationalBills: undefined;
+  AirtimeToWallet: undefined;
+  BulkSms: undefined;
   Wallet: undefined;
   Transactions: undefined;
   Notifications: undefined;

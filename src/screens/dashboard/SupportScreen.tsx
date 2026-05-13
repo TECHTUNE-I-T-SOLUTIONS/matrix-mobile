@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Text,
   Linking,
-  Alert,
   TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeToggle from '../../components/ThemeToggle';
+import CustomAlert from '../../components/CustomAlert';
 
 interface ContactMethod {
   icon: string;
@@ -46,6 +46,26 @@ const SupportScreen: React.FC = () => {
     message: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => {
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  };
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   const contactMethods: ContactMethod[] = [
     {
@@ -154,10 +174,10 @@ const SupportScreen: React.FC = () => {
           Linking.openURL(url);
         } else {
           // Try open directly and show friendly alert on failure
-          Linking.openURL(url).catch(() => Alert.alert('Error', `Cannot open ${method.title.toLowerCase()}`));
+          Linking.openURL(url).catch(() => showAlert('Error', `Cannot open ${method.title.toLowerCase()}`, 'error'));
         }
       }).catch(() => {
-        Linking.openURL(url).catch(() => Alert.alert('Error', `Cannot open ${method.title.toLowerCase()}`));
+        Linking.openURL(url).catch(() => showAlert('Error', `Cannot open ${method.title.toLowerCase()}`, 'error'));
       });
     }
   };
@@ -169,14 +189,14 @@ const SupportScreen: React.FC = () => {
   const handleFormSubmit = async () => {
     // Validate form
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.subject || !formData.message) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Error', 'Please fill in all fields', 'error');
       return;
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      showAlert('Error', 'Please enter a valid email address', 'error');
       return;
     }
 
@@ -187,27 +207,21 @@ const SupportScreen: React.FC = () => {
       // For now, we'll simulate a successful submission
       await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
 
-      Alert.alert(
+      showAlert(
         'Success',
         'Your message has been sent successfully! We\'ll get back to you within 24 hours.',
+        'success',
         [
           {
             text: 'OK',
             onPress: () => {
-              // Reset form
-              setFormData({
-                firstName: '',
-                lastName: '',
-                email: '',
-                subject: '',
-                message: '',
-              });
+              setFormData({ firstName: '', lastName: '', email: '', subject: '', message: '' });
             },
           },
         ]
       );
     } catch (error) {
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      showAlert('Error', 'Failed to send message. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -400,6 +414,7 @@ const SupportScreen: React.FC = () => {
 
           <View style={{ height: 100 }} />
         </ScrollView>
+      <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
       </LinearGradient>
     );
 };

@@ -1,5 +1,5 @@
 // src/contexts/WalletBalanceContext.tsx
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../services/apiClient';
 
@@ -66,16 +66,18 @@ export const WalletBalanceProvider: React.FC<WalletBalanceProviderProps> = ({ ch
     }
   };
 
-  const refreshBalance = async () => {
+  const refreshBalance = useCallback(async () => {
     setWalletBalance((prev: WalletBalance) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await apiClient.get<WalletBalanceResponse>('/wallet/balance');
+      const response = await apiClient.get<any>('/user/profile');
 
       if (response.success && response.data) {
+        const wallet = response.data.wallet || {};
+        const user = response.data.user || {};
         const newBalance: WalletBalance = {
-          balance: response.data.balance || 0,
-          currency: response.data.currency || 'NGN',
+          balance: Number(wallet.balance ?? user.wallet_balance ?? 0),
+          currency: wallet.currency || 'NGN',
           lastUpdated: new Date().toISOString(),
           isLoading: false,
           error: null,
@@ -97,9 +99,9 @@ export const WalletBalanceProvider: React.FC<WalletBalanceProviderProps> = ({ ch
         error: error instanceof Error ? error.message : 'Network error',
       }));
     }
-  };
+  }, []);
 
-  const updateBalance = (newBalance: number) => {
+  const updateBalance = useCallback((newBalance: number) => {
     const updatedBalance: WalletBalance = {
       ...walletBalance,
       balance: newBalance,
@@ -109,11 +111,11 @@ export const WalletBalanceProvider: React.FC<WalletBalanceProviderProps> = ({ ch
 
     setWalletBalance(updatedBalance);
     saveBalanceToStorage(updatedBalance);
-  };
+  }, [walletBalance]);
 
-  const clearError = () => {
+  const clearError = useCallback(() => {
     setWalletBalance((prev: WalletBalance) => ({ ...prev, error: null }));
-  };
+  }, []);
 
   return (
     <WalletBalanceContext.Provider

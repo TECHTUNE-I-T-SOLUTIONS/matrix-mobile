@@ -5,8 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -14,6 +12,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import { apiClient } from '../../services/apiClient';
+import CustomAlert from '../../components/CustomAlert';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 interface ReferralData {
   referral_code: string;
@@ -56,6 +56,24 @@ const ReferralsScreen: React.FC = () => {
   const [referralData, setReferralData] = useState<ReferralData | null>(null);
   const [referredUsers, setReferredUsers] = useState<ReferredUser[]>([]);
   const [copied, setCopied] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   useEffect(() => {
     fetchReferralData();
@@ -95,7 +113,7 @@ const ReferralsScreen: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching referral data:', error);
-      Alert.alert('Error', 'Failed to load referral data');
+      showAlert('Error', 'Failed to load referral data', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -114,7 +132,7 @@ const ReferralsScreen: React.FC = () => {
       try {
         const message = `Join Matrix Technologies! Use my referral code: ${referralData.referral_code} to get started. Download the app now!`;
         await Clipboard.setStringAsync(message);
-        Alert.alert('Copied!', 'Referral message copied to clipboard');
+        showAlert('Copied!', 'Referral message copied to clipboard', 'success');
       } catch (error) {
         console.error('Error sharing referral code:', error);
       }
@@ -141,7 +159,23 @@ const ReferralsScreen: React.FC = () => {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <View style={styles.loadingSkeletonWrap}>
+          <View style={[styles.loadingSkeletonCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <SkeletonLoader width="42%" height={16} marginBottom={12} />
+            <SkeletonLoader width="70%" height={22} marginBottom={10} />
+            <SkeletonLoader width="56%" height={14} />
+          </View>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <View key={index} style={[styles.loadingReferralRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <SkeletonLoader width={42} height={42} borderRadius={21} />
+              <View style={{ flex: 1 }}>
+                <SkeletonLoader width="58%" height={14} marginBottom={8} />
+                <SkeletonLoader width="80%" height={12} marginBottom={6} />
+                <SkeletonLoader width="44%" height={12} />
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -169,6 +203,7 @@ const ReferralsScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
         {/* Referral Progress Card */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.cardHeader}>
@@ -209,13 +244,6 @@ const ReferralsScreen: React.FC = () => {
               <Text style={styles.shareButtonText}>Share Code</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ReferralProgress')}
-              style={[styles.progressButton, { borderColor: theme.primary }]}
-            >
-              <Ionicons name="analytics" size={20} color={theme.primary} />
-              <Text style={[styles.progressButtonText, { color: theme.primary }]}>View Referral Progress</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Progress Section */}
@@ -361,6 +389,13 @@ const ReferralsScreen: React.FC = () => {
               </Text>
             </View>
           )}
+            <TouchableOpacity
+              onPress={() => navigation.navigate('ReferralProgress')}
+              style={[styles.progressButton, { borderColor: theme.primary }]}
+            >
+              <Ionicons name="analytics" size={20} color={theme.primary} />
+              <Text style={[styles.progressButtonText, { color: theme.primary }]}>View Referral Progress</Text>
+            </TouchableOpacity>
         </View>
 
         <View style={{ height: 120 }} />
@@ -376,6 +411,25 @@ const styles = StyleSheet.create({
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingSkeletonWrap: {
+    width: '100%',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  loadingSkeletonCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 4,
+  },
+  loadingReferralRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
   },
   header: {
     paddingTop: 60,

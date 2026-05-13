@@ -2,7 +2,7 @@
   "expo": {
     "name": "Matrix",
     "slug": "Matrix",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -24,7 +24,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.princetechtune.Matrix",
-      "versionCode": 9,
+      "versionCode": 10,
       "googleServicesFile": "./google-services.json"
     },
     "web": {

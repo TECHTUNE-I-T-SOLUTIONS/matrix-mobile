@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Text,
   Switch,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +16,7 @@ import ThemeToggle from '../../components/ThemeToggle';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isAutoCheckEnabled, setAutoCheckEnabled } from '../../hooks/useAutoUpdateCheck';
+import CustomAlert from '../../components/CustomAlert';
 
 const SettingsScreen: React.FC = () => {
   const { theme, isDark, setThemeMode } = useTheme();
@@ -26,6 +26,25 @@ const SettingsScreen: React.FC = () => {
   const [biometric, setBiometric] = useState(false);
   const [autoLock, setAutoLock] = useState(true);
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true);
+
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info',
+    buttons: undefined as
+      | Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+      | undefined,
+  });
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info',
+    buttons?: Array<{ text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }>
+  ) => setAlertConfig({ visible: true, title, message, type, buttons });
+
+  const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   // load saved setting
   React.useEffect(() => {
@@ -40,26 +59,21 @@ const SettingsScreen: React.FC = () => {
   }, [])
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-              navigation.navigate('AuthChoice');
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            }
-          },
+    showAlert('Logout', 'Are you sure you want to logout?', 'warning', [
+      { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOut();
+          } catch (error) {
+            console.error('Logout error:', error);
+            showAlert('Error', 'Failed to logout. Please try again.', 'error');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const settingsSections = [
@@ -86,7 +100,7 @@ const SettingsScreen: React.FC = () => {
         {
           icon: 'key',
           label: 'Change Password',
-          onPress: () => Alert.alert('Coming Soon', 'Password change feature will be available soon.'),
+          onPress: () => showAlert('Coming Soon', 'Password change feature will be available soon.'),
         },
       ],
     },
@@ -103,12 +117,12 @@ const SettingsScreen: React.FC = () => {
         {
           icon: 'mail',
           label: 'Email Notifications',
-          onPress: () => Alert.alert('Coming Soon', 'Email notification settings will be available soon.'),
+          onPress: () => showAlert('Coming Soon', 'Email notification settings will be available soon.'),
         },
         {
           icon: 'phone-portrait',
           label: 'SMS Notifications',
-          onPress: () => Alert.alert('Coming Soon', 'SMS notification settings will be available soon.'),
+          onPress: () => showAlert('Coming Soon', 'SMS notification settings will be available soon.'),
         },
       ],
     },
@@ -127,7 +141,7 @@ const SettingsScreen: React.FC = () => {
         {
           icon: 'globe',
           label: 'Currency',
-          onPress: () => Alert.alert('Currency', 'Currently set to Nigerian Naira (NGN).'),
+          onPress: () => showAlert('Currency', 'Currently set to Nigerian Naira (NGN).'),
         },
         {
           icon: 'download',
@@ -257,6 +271,7 @@ const SettingsScreen: React.FC = () => {
 
           <View style={{ height: 100 }} />
         </ScrollView>
+        <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
       </LinearGradient>
     );
 };

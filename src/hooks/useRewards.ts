@@ -1,5 +1,5 @@
 // src/hooks/useRewards.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../services/apiClient';
 
 export interface RewardTransaction {
@@ -10,15 +10,22 @@ export interface RewardTransaction {
   created_at: string;
 }
 
+export interface SpinResult {
+  amount: number;
+  newBalance: number;
+  nextSpinAt?: string;
+}
+
 export const useRewards = () => {
   const [rewardBalance, setRewardBalance] = useState(0);
+  const [totalReward, setTotalReward] = useState(0);
   const [transactions, setTransactions] = useState<RewardTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastSpinAt, setLastSpinAt] = useState<string | null>(null);
   const [nextSpinAt, setNextSpinAt] = useState<string | null>(null);
   const [canSpinNow, setCanSpinNow] = useState(true);
 
-  const fetchRewards = async () => {
+  const fetchRewards = useCallback(async () => {
     setLoading(true);
     try {
       const res: any = await apiClient.get('/rewards');
@@ -29,6 +36,7 @@ export const useRewards = () => {
       if (res && res.success && responseData) {
         const balance = responseData.balance || 0;
         setRewardBalance(balance);
+        setTotalReward(responseData.totalReward || 0);
         setTransactions(responseData.transactions || []);
         setLastSpinAt(responseData.lastSpinAt || null);
         setNextSpinAt(responseData.nextSpinAt || null);
@@ -41,9 +49,9 @@ export const useRewards = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const spinReward = async () => {
+  const spinReward = useCallback(async (amount?: number): Promise<SpinResult | 0> => {
     try {
       // Check if user can spin
       if (!canSpinNow) {
@@ -51,7 +59,7 @@ export const useRewards = () => {
         return 0;
       }
 
-      const res: any = await apiClient.post('/rewards/spin', {});
+      const res: any = await apiClient.post('/rewards/spin', { amount });
       
       if (res && res.success) {
         // Handle double-wrapped response from apiClient
@@ -63,16 +71,15 @@ export const useRewards = () => {
         const nextSpin = responseData?.nextSpinAt;
 
         setRewardBalance(newBalance);
+        setTotalReward((prev) => prev + amount);
         setCanSpinNow(false);
         setNextSpinAt(new Date(nextSpin).toISOString());
         setLastSpinAt(new Date().toISOString());
 
         // Also refresh full data after a slight delay to get DB updates
-        setTimeout(() => {
-          fetchRewards();
-        }, 1000);
+        fetchRewards();
 
-        return amount;
+        return { amount, newBalance, nextSpinAt: nextSpin };
       }
       return 0;
     } catch (e: any) {
@@ -83,11 +90,11 @@ export const useRewards = () => {
       }
       return 0;
     }
-  };
+  }, [canSpinNow, fetchRewards]);
 
   useEffect(() => {
     fetchRewards();
   }, []);
 
-  return { rewardBalance, transactions, loading, spinReward, fetchRewards, lastSpinAt, nextSpinAt, canSpinNow };
+  return { rewardBalance, totalReward, transactions, loading, spinReward, fetchRewards, lastSpinAt, nextSpinAt, canSpinNow };
 };

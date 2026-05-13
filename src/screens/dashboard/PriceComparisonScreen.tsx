@@ -1,19 +1,30 @@
 // src/screens/dashboard/PriceComparisonScreen.tsx
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePriceComparison, PricePlan } from '../../hooks/usePriceComparison';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 
 const PriceComparisonScreen = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation<any>();
   const { plans, loading } = usePriceComparison();
-  const [selectedSize, setSelectedSize] = useState('10GB');
+  const [selectedSize, setSelectedSize] = useState('');
 
   const availableSizes = Array.from(new Set(plans.map(p => p.plan_name)));
+
+  useEffect(() => {
+    if (!availableSizes.length) {
+      return;
+    }
+
+    if (!selectedSize || !availableSizes.includes(selectedSize)) {
+      setSelectedSize(availableSizes[0]);
+    }
+  }, [availableSizes, selectedSize]);
 
   const getNetworkColor = (network: string) => {
     switch (network.toUpperCase()) {
@@ -52,7 +63,7 @@ const PriceComparisonScreen = () => {
     );
   };
 
-  const filteredPlans = plans.filter(p => p.plan_name === selectedSize);
+  const filteredPlans = selectedSize ? plans.filter(p => p.plan_name === selectedSize) : [];
   const bestPrice = Math.min(...filteredPlans.map(p => p.price));
 
   return (
@@ -103,7 +114,24 @@ const PriceComparisonScreen = () => {
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 40 }} />
+          <View style={styles.loadingSkeletonWrap}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <View key={index} style={[styles.loadingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={styles.loadingCardHeader}>
+                  <SkeletonLoader width={60} height={12} />
+                  <SkeletonLoader width={72} height={20} />
+                </View>
+                <SkeletonLoader width="82%" height={14} marginBottom={10} />
+                <SkeletonLoader width="42%" height={14} />
+              </View>
+            ))}
+          </View>
+        ) : filteredPlans.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="information-circle-outline" size={42} color={theme.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>No plans available</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Try refreshing the screen or check back later.</Text>
+          </View>
         ) : (
           <View style={styles.comparisonList}>
             {filteredPlans.sort((a, b) => a.price - b.price).map(plan => renderComparisonCard(plan, bestPrice))}
@@ -168,6 +196,21 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     marginBottom: 24,
+  },
+  loadingSkeletonWrap: {
+    marginTop: 20,
+  },
+  loadingCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+  },
+  loadingCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   insightText: {
     flex: 1,
@@ -238,6 +281,22 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     marginLeft: 8,
     fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptyText: {
+    marginTop: 6,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 

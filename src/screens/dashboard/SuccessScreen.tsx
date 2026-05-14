@@ -1,5 +1,5 @@
 // src/screens/dashboard/SuccessScreen.tsx
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   Text,
   Dimensions,
   Alert,
+  Clipboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +29,7 @@ interface SuccessData {
   provider?: string;
   meterNumber?: string;
   meterType?: string;
+  pin?: string;
   quantity?: number;
   status?: string;
   timestamp?: string;
@@ -95,6 +97,7 @@ const SuccessScreen: React.FC = () => {
             { label: 'Meter Type', value: data.meterType },
             { label: 'Amount', value: `₦${data.amount.toLocaleString()}` },
             { label: 'Meter Number', value: data.meterNumber },
+            { label: 'Pin / Token', value: data.pin || data.apiResponse?.token || data.apiResponse?.details?.token || data.apiResponse?.message?.details?.token },
           ],
         };
       case 'exampins':
@@ -160,8 +163,18 @@ const SuccessScreen: React.FC = () => {
   };
 
   const config = getServiceConfig(data.serviceType);
+  const [copiedPin, setCopiedPin] = useState(false);
 
-
+  const handleCopyPin = async (pin: string) => {
+    try {
+      await Clipboard.setString(pin);
+      setCopiedPin(true);
+      Alert.alert('Copied!', 'PIN/Token copied to clipboard');
+      setTimeout(() => setCopiedPin(false), 2000);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to copy PIN/Token');
+    }
+  };
 
   const handleDone = () => {
     navigation.goBack();
@@ -194,7 +207,19 @@ const SuccessScreen: React.FC = () => {
             {config.details.map((detail, index) => (
               <View key={index} style={[styles.detailRow, { borderBottomColor: theme.border }]}>
                 <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>{detail.label}:</Text>
-                <Text style={[styles.detailValue, { color: theme.text }]}>{detail.value}</Text>
+                {detail.label === 'Pin / Token' && detail.value ? (
+                  <View style={styles.pinContainer}>
+                    <Text style={[styles.detailValue, { color: theme.text }]}>{detail.value}</Text>
+                    <TouchableOpacity
+                      style={styles.copyButton}
+                      onPress={() => handleCopyPin(detail.value)}
+                    >
+                      <Ionicons name="copy" size={16} color={theme.primary} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={[styles.detailValue, { color: theme.text }]}>{detail.value}</Text>
+                )}
               </View>
             ))}
 
@@ -421,6 +446,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  pinContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  copyButton: {
+    padding: 6,
+    borderRadius: 6,
   },
   hiddenTemplate: {
     position: 'absolute',

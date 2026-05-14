@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Text,
   Dimensions,
+  Clipboard,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,6 +50,15 @@ const TransactionDetailsScreen: React.FC = () => {
   };
 
   const metadata = transaction.metadata || {};
+
+  const handleCopyPin = async (pin: string) => {
+    try {
+      await Clipboard.setString(pin);
+      Alert.alert('Copied!', 'PIN/Token copied to clipboard');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to copy PIN/Token');
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -101,6 +112,16 @@ const TransactionDetailsScreen: React.FC = () => {
             {metadata.disco && (
               <DetailRow label="Provider" value={metadata.disco.toUpperCase()} theme={theme} />
             )}
+
+            {(metadata.pin || metadata.token || metadata.electricity_token) && (
+              <DetailRow
+                label="Pin / Token"
+                value={metadata.pin || metadata.token || metadata.electricity_token}
+                theme={theme}
+                onCopy={handleCopyPin}
+                isCopyable={true}
+              />
+            )}
           </View>
         </View>
 
@@ -128,6 +149,7 @@ const TransactionDetailsScreen: React.FC = () => {
               meterNumber: metadata.meter_number,
               disco: metadata.disco,
               plan: metadata.plan_name || metadata.plan,
+              pin: metadata.pin || metadata.token || metadata.electricity_token,
             }} 
           />
         </ViewShot>
@@ -136,10 +158,22 @@ const TransactionDetailsScreen: React.FC = () => {
   );
 };
 
-const DetailRow = ({ label, value, theme }: { label: string; value: string; theme: any }) => (
+const DetailRow = ({ label, value, theme, onCopy, isCopyable }: { label: string; value: string; theme: any; onCopy?: (value: string) => void; isCopyable?: boolean }) => (
   <View style={[styles.detailRow, { borderBottomColor: theme.border }]}>
     <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>{label}</Text>
-    <Text style={[styles.detailValue, { color: theme.text }]}>{value}</Text>
+    {isCopyable && onCopy ? (
+      <View style={styles.pinContainer}>
+        <Text style={[styles.detailValue, { color: theme.text }]}>{value}</Text>
+        <TouchableOpacity
+          style={styles.copyButton}
+          onPress={() => onCopy(value)}
+        >
+          <Ionicons name="copy" size={16} color={theme.primary} />
+        </TouchableOpacity>
+      </View>
+    ) : (
+      <Text style={[styles.detailValue, { color: theme.text }]}>{value}</Text>
+    )}
   </View>
 );
 
@@ -218,6 +252,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 2,
     textAlign: 'right',
+  },
+  pinContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flex: 2,
+  },
+  copyButton: {
+    padding: 6,
+    borderRadius: 6,
   },
   shareButton: {
     flexDirection: 'row',

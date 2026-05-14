@@ -34,6 +34,8 @@ const ElectricityScreen: React.FC = () => {
   const [meterNumber, setMeterNumber] = useState('');
   const [amount, setAmount] = useState('');
   const [meterType, setMeterType] = useState<'prepaid' | 'postpaid'>('prepaid');
+  const [validationData, setValidationData] = useState<any>(null);
+  const [isValidated, setIsValidated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -56,7 +58,7 @@ const ElectricityScreen: React.FC = () => {
     setAlertConfig((current) => ({ ...current, visible: false }));
   };
 
-  const handlePurchase = async () => {
+  const handleValidate = async () => {
     if (!selectedProvider || !meterNumber || !amount) {
       showAlert('Error', 'Please fill in all fields', 'error');
       return;
@@ -73,6 +75,7 @@ const ElectricityScreen: React.FC = () => {
         meter_number: meterNumber,
         disco: selectedProvider,
         meter_type: meterType,
+        amount: parseFloat(amount),
       });
 
       if (!validationResponse.success) {
@@ -82,12 +85,47 @@ const ElectricityScreen: React.FC = () => {
 
       const validationData = (validationResponse.data as any)?.data || validationResponse.data;
       console.log('[ElectricityScreen] Validation data:', validationData);
+      setValidationData(validationData);
+      setIsValidated(true);
+      showAlert(
+        'Meter Validated',
+        `Customer: ${validationData?.customer_name || 'Unknown'}\nAddress: ${validationData?.address || 'Not available'}\nYou can now proceed to pay.`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Validation error:', error);
+      showAlert('Error', 'Failed to validate meter', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handlePurchase = async () => {
+    if (!selectedProvider || !meterNumber || !amount) {
+      showAlert('Error', 'Please fill in all fields', 'error');
+      return;
+    }
+
+    if (parseFloat(amount) < 1000) {
+      showAlert('Error', 'Minimum amount is ₦1,000', 'error');
+      return;
+    }
+
+    if (!isValidated) {
+      await handleValidate();
+      return;
+    }
+
+    try {
+      setLoading(true);
       const response = await apiClient.post('/services/electricity/purchase', {
         meter_number: meterNumber,
         amount: parseFloat(amount),
         disco: selectedProvider,
         meter_type: meterType,
+        customer_name: validationData?.customer_name,
+        address: validationData?.address,
+        validation: validationData,
       });
 
       const responseData = (response.data as any)?.data || response.data;
@@ -110,7 +148,8 @@ const ElectricityScreen: React.FC = () => {
                   transactionId: responseData?.transaction_id || responseData?.reference || `TXN_${Date.now()}`,
                   status: responseData?.status || 'completed',
                   timestamp: new Date().toISOString(),
-                  ...(responseData && { apiResponse: responseData }),
+                  pin: responseData?.token || responseData?.details?.token || responseData?.apiResponse?.message?.details?.token,
+                  apiResponse: responseData,
                 }
               })
             },
@@ -122,11 +161,22 @@ const ElectricityScreen: React.FC = () => {
           ]
         );
       } else {
-        showAlert('Error', response.error || 'Purchase failed', 'error');
+        const errorMessage = response.error || 'Purchase failed';
+        showAlert('Payment Failed', errorMessage, 'error');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Purchase error:', error);
-      showAlert('Error', 'Failed to complete purchase', 'error');
+      
+      // Extract error message from response if available
+      let errorMessage = 'Failed to complete purchase. Please try again.';
+      
+      if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
+      showAlert('Error', errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -177,7 +227,11 @@ const ElectricityScreen: React.FC = () => {
                     borderColor: theme.border,
                   },
                 ]}
-                onPress={() => setSelectedProvider(provider.id)}
+                onPress={() => {
+                  setSelectedProvider(provider.id);
+                  setIsValidated(false);
+                  setValidationData(null);
+                }}
               >
                 <Text
                   style={[
@@ -215,7 +269,11 @@ const ElectricityScreen: React.FC = () => {
                     borderColor: theme.border,
                   },
                 ]}
-                onPress={() => setMeterType('prepaid')}
+                onPress={() => {
+                  setMeterType('prepaid');
+                  setIsValidated(false);
+                  setValidationData(null);
+                }}
               >
                 <Text
                   style={[
@@ -236,7 +294,11 @@ const ElectricityScreen: React.FC = () => {
                     borderColor: theme.border,
                   },
                 ]}
-                onPress={() => setMeterType('postpaid')}
+                onPress={() => {
+                  setMeterType('postpaid');
+                  setIsValidated(false);
+                  setValidationData(null);
+                }}
               >
                 <Text
                   style={[
@@ -260,7 +322,11 @@ const ElectricityScreen: React.FC = () => {
               placeholder="Enter meter number"
               placeholderTextColor={theme.textSecondary}
               value={meterNumber}
-              onChangeText={setMeterNumber}
+              onChangeText={(text) => {
+                setMeterNumber(text);
+                setIsValidated(false);
+                setValidationData(null);
+              }}
               keyboardType="numeric"
             />
           </View>
@@ -273,7 +339,11 @@ const ElectricityScreen: React.FC = () => {
               placeholder="1000"
               placeholderTextColor={theme.textSecondary}
               value={amount}
-              onChangeText={setAmount}
+              onChangeText={(text) => {
+                setAmount(text);
+                setIsValidated(false);
+                setValidationData(null);
+              }}
               keyboardType="numeric"
             />
           </View>
@@ -281,15 +351,30 @@ const ElectricityScreen: React.FC = () => {
           {/* Purchase Button */}
           <TouchableOpacity
             style={[styles.purchaseButton, { backgroundColor: theme.primary }]}
-            onPress={handlePurchase}
+            onPress={isValidated ? handlePurchase : handleValidate}
             disabled={loading}
           >
             {loading ? (
               <Text style={styles.purchaseText}>Processing...</Text>
             ) : (
-              <Text style={styles.purchaseText}>Pay Electricity Bill</Text>
+              <Text style={styles.purchaseText}>{isValidated ? 'Pay Electricity Bill' : 'Validate'}</Text>
             )}
           </TouchableOpacity>
+
+          {isValidated && validationData && (
+            <View style={[styles.validationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.validationLabel, { color: theme.textSecondary }]}>Validated Customer</Text>
+              <Text style={[styles.validationValue, { color: theme.text }]}>{validationData.customer_name || 'Unknown'}</Text>
+              <Text style={[styles.validationSubValue, { color: theme.textSecondary }]}>
+                {validationData.address || 'Address not available'}
+              </Text>
+              {validationData.arrears !== undefined && (
+                <Text style={[styles.validationSubValue, { color: theme.textSecondary }]}>
+                  Arrears: ₦{Number(validationData.arrears || 0).toLocaleString()}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -411,6 +496,27 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  validationCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  validationLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  validationValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  validationSubValue: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
 

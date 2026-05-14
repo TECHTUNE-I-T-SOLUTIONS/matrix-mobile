@@ -12,6 +12,7 @@ interface ShareReceiptTemplateProps {
     transactionId: string;
     timestamp: string;
     meterNumber?: string;
+    pin?: string;
     disco?: string;
     provider?: string;
     plan?: string;
@@ -102,6 +103,10 @@ const ShareReceiptTemplate: React.FC<ShareReceiptTemplateProps> = ({ transaction
 
         {transaction.serviceType === 'electricity' && transaction.provider && (
           <DetailRow label="Token" value={transaction.provider} /> // Often the token is returned in a provider field or similar
+        )}
+
+        {transaction.pin && (
+          <DetailRow label="Pin/Token" value={transaction.pin} />
         )}
 
         {transaction.serviceType === 'cabletv' && transaction.plan && (

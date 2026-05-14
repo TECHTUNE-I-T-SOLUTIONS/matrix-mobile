@@ -24,16 +24,27 @@ interface SuccessData {
   amount: number;
   recipient?: string;
   planName?: string;
+  betId?: string;
+  customerName?: string;
   transactionId?: string;
   network?: string;
   provider?: string;
   meterNumber?: string;
   meterType?: string;
   pin?: string;
+  serial?: string;
   quantity?: number;
   status?: string;
   timestamp?: string;
   apiResponse?: any;
+  pins?: Array<{ name?: string; pin?: string; serial?: string }>;
+  pinTitle?: string;
+}
+
+interface ExamPinEntry {
+  name?: string;
+  pin?: string;
+  serial?: string;
 }
 
 type SuccessScreenRouteProp = RouteProp<{ Success: { data: SuccessData } }, 'Success'>;
@@ -108,6 +119,7 @@ const SuccessScreen: React.FC = () => {
           color: '#6366F1',
           details: [
             { label: 'Exam Type', value: data.provider },
+            { label: 'Pin Type', value: data.pinTitle },
             { label: 'Plan', value: data.planName },
             { label: 'Amount', value: `₦${data.amount.toLocaleString()}` },
             { label: 'Quantity', value: data.quantity?.toString() },
@@ -133,8 +145,25 @@ const SuccessScreen: React.FC = () => {
           color: '#0EA5E9',
           details: [
             { label: 'Provider', value: data.provider },
+            { label: 'Plan', value: data.planName },
             { label: 'Amount', value: `₦${data.amount.toLocaleString()}` },
             { label: 'Account Number', value: data.recipient },
+            {
+              label: 'Pin / Token',
+              value:
+                data.pin ||
+                data.apiResponse?.pin ||
+                data.apiResponse?.data?.pin ||
+                data.apiResponse?.message?.details?.processed?.pin,
+            },
+            {
+              label: 'Serial',
+              value:
+                data.serial ||
+                data.apiResponse?.serial ||
+                data.apiResponse?.data?.serial ||
+                data.apiResponse?.message?.details?.processed?.serial,
+            },
           ],
         };
       case 'betting':
@@ -145,6 +174,8 @@ const SuccessScreen: React.FC = () => {
           color: '#F59E0B',
           details: [
             { label: 'Provider', value: data.provider },
+            { label: 'Bet ID', value: data.betId },
+            { label: 'Customer Name', value: data.customerName || data.planName },
             { label: 'Amount', value: `₦${data.amount.toLocaleString()}` },
             { label: 'Account ID', value: data.recipient },
           ],
@@ -164,6 +195,13 @@ const SuccessScreen: React.FC = () => {
 
   const config = getServiceConfig(data.serviceType);
   const [copiedPin, setCopiedPin] = useState(false);
+  const pins: ExamPinEntry[] = Array.isArray(data.pins)
+    ? data.pins
+    : Array.isArray(data.apiResponse?.pins)
+      ? data.apiResponse.pins
+      : Array.isArray(data.apiResponse?.data?.pins)
+        ? data.apiResponse.data.pins
+        : [];
 
   const handleCopyPin = async (pin: string) => {
     try {
@@ -207,7 +245,7 @@ const SuccessScreen: React.FC = () => {
             {config.details.map((detail, index) => (
               <View key={index} style={[styles.detailRow, { borderBottomColor: theme.border }]}>
                 <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>{detail.label}:</Text>
-                {detail.label === 'Pin / Token' && detail.value ? (
+                {(detail.label === 'Pin / Token' || detail.label === 'Serial') && detail.value ? (
                   <View style={styles.pinContainer}>
                     <Text style={[styles.detailValue, { color: theme.text }]}>{detail.value}</Text>
                     <TouchableOpacity
@@ -222,6 +260,35 @@ const SuccessScreen: React.FC = () => {
                 )}
               </View>
             ))}
+
+            {data.serviceType === 'exampins' && pins.length > 0 && (
+              <View style={styles.pinListContainer}>
+                <Text style={[styles.pinListTitle, { color: theme.text }]}>Your Pins</Text>
+                {pins.map((pinEntry: ExamPinEntry, index: number) => {
+                  const pinValue = pinEntry.pin || '';
+                  return (
+                    <View key={`${pinEntry.name || 'pin'}-${index}`} style={[styles.pinListItem, { borderColor: theme.border, backgroundColor: theme.surfaceVariant }]}>
+                      <View style={styles.pinListHeader}>
+                        <Text style={[styles.pinListName, { color: theme.text }]}>{pinEntry.name || `PIN ${index + 1}`}</Text>
+                        {!!pinEntry.serial && (
+                          <Text style={[styles.pinListSerial, { color: theme.textSecondary }]}>Serial: {pinEntry.serial}</Text>
+                        )}
+                      </View>
+                      <View style={styles.pinListValueRow}>
+                        <Text style={[styles.pinListValue, { color: theme.text }]} numberOfLines={1} selectable>
+                          {pinValue}
+                        </Text>
+                        {pinValue ? (
+                          <TouchableOpacity style={styles.copyButton} onPress={() => handleCopyPin(pinValue)}>
+                            <Ionicons name="copy" size={16} color={theme.primary} />
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
 
             {/* Status */}
             {data.status && (
@@ -378,6 +445,50 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: 10,
+  },
+  amount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  pinListContainer: {
+    width: '100%',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  pinListTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  pinListItem: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
+  pinListHeader: {
+    marginBottom: 10,
+  },
+  pinListName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pinListSerial: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  pinListValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  pinListValue: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.4,
   },
   transactionIdContainer: {
     width: '100%',

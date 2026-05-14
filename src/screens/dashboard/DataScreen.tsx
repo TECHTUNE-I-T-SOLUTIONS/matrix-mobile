@@ -154,12 +154,20 @@ const PlanCard = React.memo(({
   </TouchableOpacity>
 ));
 
-const DataScreen: React.FC = () => {
+type DataScreenProps = {
+  route?: {
+    params?: {
+      prefilledNumber?: string;
+    };
+  };
+};
+
+const DataScreen: React.FC<DataScreenProps> = ({ route }) => {
   const { theme } = useTheme();
   const navigation = useNavigation();
   const [selectedNetwork, setSelectedNetwork] = useState('mtn');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(route?.params?.prefilledNumber || '');
   const [dataPlans, setDataPlans] = useState<DataPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<DataPlan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -184,6 +192,13 @@ const DataScreen: React.FC = () => {
       onConfirm: onConfirm || (() => setAlertConfig(prev => ({ ...prev, visible: false }))),
     });
   }, []);
+
+  // Auto-detect network when prefilled number is provided
+  useEffect(() => {
+    if (route?.params?.prefilledNumber) {
+      detectNetwork(route.params.prefilledNumber);
+    }
+  }, [route?.params?.prefilledNumber]);
 
   const detectNetwork = (number: string) => {
     const cleanNumber = normalizePhoneNumber(number);

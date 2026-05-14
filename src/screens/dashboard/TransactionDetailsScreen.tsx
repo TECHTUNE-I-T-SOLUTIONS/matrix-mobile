@@ -50,6 +50,21 @@ const TransactionDetailsScreen: React.FC = () => {
   };
 
   const metadata = transaction.metadata || {};
+  const pinEntries = Array.isArray(metadata.pins)
+    ? metadata.pins
+    : Array.isArray(metadata.api_response?.pins)
+      ? metadata.api_response.pins
+      : Array.isArray(metadata.api_response?.message?.details?.epins)
+        ? metadata.api_response.message.details.epins
+        : [];
+  const internetPinEntries = transaction.service_type === 'internet' && (metadata.pin || metadata.serial)
+    ? [{
+        name: metadata.plan_name || metadata.plan_id || 'Internet Pin',
+        pin: metadata.pin,
+        serial: metadata.serial,
+      }]
+    : [];
+  const displayPinEntries = pinEntries.length > 0 ? pinEntries : internetPinEntries;
 
   const handleCopyPin = async (pin: string) => {
     try {
@@ -105,12 +120,28 @@ const TransactionDetailsScreen: React.FC = () => {
               <DetailRow label="Plan" value={metadata.plan_name || metadata.plan} theme={theme} />
             )}
 
+            {transaction.service_type === 'betting' && metadata.bet_id && (
+              <DetailRow label="Bet ID" value={metadata.bet_id} theme={theme} />
+            )}
+
+            {transaction.service_type === 'betting' && metadata.customer_name && (
+              <DetailRow label="Customer Name" value={metadata.customer_name} theme={theme} />
+            )}
+
+            {transaction.service_type === 'internet' && metadata.plan_id && !metadata.plan_name && (
+              <DetailRow label="Plan ID" value={metadata.plan_id} theme={theme} />
+            )}
+
             {metadata.meter_number && (
               <DetailRow label="Meter Number" value={metadata.meter_number} theme={theme} />
             )}
 
             {metadata.disco && (
               <DetailRow label="Provider" value={metadata.disco.toUpperCase()} theme={theme} />
+            )}
+
+            {(metadata.pin_title || metadata.epin_type) && (
+              <DetailRow label="Pin Type" value={(metadata.pin_title || metadata.epin_type).toUpperCase()} theme={theme} />
             )}
 
             {(metadata.pin || metadata.token || metadata.electricity_token) && (
@@ -121,6 +152,55 @@ const TransactionDetailsScreen: React.FC = () => {
                 onCopy={handleCopyPin}
                 isCopyable={true}
               />
+            )}
+
+            {transaction.service_type === 'internet' && metadata.serial && (
+              <DetailRow
+                label="Serial"
+                value={metadata.serial}
+                theme={theme}
+                onCopy={handleCopyPin}
+                isCopyable={true}
+              />
+            )}
+
+            {displayPinEntries.length > 0 && (
+              <View style={styles.pinListSection}>
+                <Text style={[styles.pinListTitle, { color: theme.text }]}>Your Pins</Text>
+                {displayPinEntries.map((pinEntry: any, index: number) => {
+                  const pinValue = pinEntry.pin || '';
+                  return (
+                    <View key={`${pinEntry.name || 'pin'}-${index}`} style={[styles.pinItem, { backgroundColor: theme.surfaceVariant, borderColor: theme.border }]}>
+                      <View style={styles.pinItemHeader}>
+                        <Text style={[styles.pinItemName, { color: theme.text }]}>{pinEntry.name || `PIN ${index + 1}`}</Text>
+                        {!!pinEntry.serial && (
+                          <Text style={[styles.pinItemSerial, { color: theme.textSecondary }]}>Serial: {pinEntry.serial}</Text>
+                        )}
+                      </View>
+                      <View style={styles.pinValueRow}>
+                        <Text style={[styles.pinValue, { color: theme.text }]} selectable numberOfLines={1}>
+                          {pinValue}
+                        </Text>
+                        {pinValue ? (
+                          <TouchableOpacity style={styles.copyButton} onPress={() => handleCopyPin(pinValue)}>
+                            <Ionicons name="copy" size={16} color={theme.primary} />
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                      {pinEntry.serial ? (
+                        <View style={[styles.pinValueRow, { marginTop: 10 }]}>
+                          <Text style={[styles.pinValue, { color: theme.textSecondary }]} selectable numberOfLines={1}>
+                            Serial: {pinEntry.serial}
+                          </Text>
+                          <TouchableOpacity style={styles.copyButton} onPress={() => handleCopyPin(pinEntry.serial)}>
+                            <Ionicons name="copy" size={16} color={theme.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
             )}
           </View>
         </View>
@@ -223,6 +303,45 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     marginBottom: 8,
+  },
+  pinListSection: {
+    marginTop: 8,
+    marginBottom: 8,
+    width: '100%',
+  },
+  pinListTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  pinItem: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
+  pinItemHeader: {
+    marginBottom: 10,
+  },
+  pinItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pinItemSerial: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  pinValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  pinValue: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.4,
   },
   statusBadge: {
     paddingHorizontal: 12,

@@ -16,12 +16,13 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import CustomAlert from '../../components/CustomAlert';
 
+const DEFAULT_SENDER_ID = 'Pscribe';
+
 const BulkSmsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const [to, setTo] = useState('');
   const [message, setMessage] = useState('Hello from Matrix');
-  const [senderId, setSenderId] = useState('Pscribe');
   const [loading, setLoading] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -45,17 +46,28 @@ const BulkSmsScreen: React.FC = () => {
   const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   const sendSms = async () => {
-    if (!to.trim() || !message.trim()) {
+    const recipients = to
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(',');
+
+    if (!recipients || !message.trim()) {
       showAlert('Error', 'Please enter recipient numbers and a message', 'error');
+      return;
+    }
+
+    if (message.trim().length > 160) {
+      showAlert('Error', 'Bulk SMS messages are limited to 160 characters per page', 'error');
       return;
     }
 
     try {
       setLoading(true);
       const response = await apiClient.post('/services/sms/bulk', {
-        to,
+        to: recipients,
         message,
-        sender_id: senderId,
+        sender_id: DEFAULT_SENDER_ID,
       });
 
       if (response.success) {
@@ -99,20 +111,16 @@ const BulkSmsScreen: React.FC = () => {
           onChangeText={setTo}
           placeholder="08123456789, 08098765432"
           placeholderTextColor={theme.textSecondary}
-          keyboardType="phone-pad"
           multiline
         />
 
         <Text style={[styles.helper, { color: theme.textSecondary }]}>Separate multiple numbers with commas.</Text>
 
         <Text style={[styles.label, { color: theme.text }]}>Sender ID</Text>
-        <TextInput
-          style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surface }]}
-          value={senderId}
-          onChangeText={setSenderId}
-          placeholder="Pscribe"
-          placeholderTextColor={theme.textSecondary}
-        />
+        <View style={[styles.readOnlyField, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
+          <Text style={[styles.readOnlyText, { color: theme.text }]}>{DEFAULT_SENDER_ID}</Text>
+          <Text style={[styles.readOnlyHint, { color: theme.textSecondary }]}>Approved sender ID</Text>
+        </View>
 
         <Text style={[styles.label, { color: theme.text }]}>Message</Text>
         <TextInput
@@ -122,6 +130,7 @@ const BulkSmsScreen: React.FC = () => {
           placeholder="Write your SMS..."
           placeholderTextColor={theme.textSecondary}
           multiline
+          maxLength={160}
         />
 
         <Text style={[styles.helper, { color: theme.textSecondary }]}>{message.length}/160 characters per page</Text>
@@ -151,6 +160,15 @@ const styles = StyleSheet.create({
   content: { padding: 20, gap: 14, paddingBottom: 40 },
   label: { fontSize: 15, fontWeight: '600', marginTop: 4 },
   input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16 },
+  readOnlyField: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 4,
+  },
+  readOnlyText: { fontSize: 16, fontWeight: '600' },
+  readOnlyHint: { fontSize: 12 },
   messageInput: { minHeight: 160, textAlignVertical: 'top' },
   helper: { fontSize: 12, marginTop: 2 },
   submitButton: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },

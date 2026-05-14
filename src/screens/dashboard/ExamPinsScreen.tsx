@@ -15,6 +15,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
 import CustomAlert from '../../components/CustomAlert';
+import { useWalletBalance } from '../../contexts/WalletBalanceContext';
 
 interface ExamPin {
   id: string;
@@ -22,6 +23,8 @@ interface ExamPin {
   name: string;
   amount: number;
   description: string;
+  available: boolean;
+  renderKey: string;
 }
 
 const EXAM_TYPES = [
@@ -34,12 +37,15 @@ const EXAM_TYPES = [
 const ExamPinsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
+  const { walletBalance, refreshBalance } = useWalletBalance();
   const [selectedExam, setSelectedExam] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [examPins, setExamPins] = useState<ExamPin[]>([]);
   const [selectedPin, setSelectedPin] = useState<ExamPin | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingPins, setLoadingPins] = useState(false);
+  const [jambAccount, setJambAccount] = useState('');
+  const [phone, setPhone] = useState('');
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
     title: '',
@@ -65,21 +71,72 @@ const ExamPinsScreen: React.FC = () => {
     }
   }, [selectedExam]);
 
+  useEffect(() => {
+    refreshBalance().catch((error) => {
+      console.error('Failed to refresh wallet balance:', error);
+    });
+  }, [refreshBalance]);
+
   const fetchExamPins = async () => {
     try {
       setLoadingPins(true);
       const response = await apiClient.get('/services/epins');
       if (response.success) {
         const pins = Array.isArray(response.data) ? response.data : (response.data as any)?.data || [];
-        setExamPins(
-          pins.map((pin: any) => ({
-            id: pin.id || pin.product_code,
-            product_code: pin.product_code || pin.code || pin.id,
-            name: pin.name,
-            amount: parseFloat(pin.amount) || 0,
-            description: pin.description || pin.type || selectedExam.toUpperCase(),
-          }))
-        );
+        
+        // Get valid pin IDs for the selected exam type
+        const validPinIds = EXAM_PIN_MAPPING[selectedExam.toLowerCase()] || [];
+        
+        // Filter pins to only show those matching the selected exam type
+        const filteredPins = pins.filter((pin: any) => {
+          const pinId = pin.id || pin.product_code;
+          return validPinIds.includes(pinId);
+        });
+
+        const seenKeys = new Set<string>();
+        const mappedPins = filteredPins
+          .map((pin: any, index: number) => {
+            const id = String(pin.id || pin.product_code || '').trim();
+            const productCode = String(pin.product_code || pin.code || pin.id || '').trim();
+            const name = String(pin.name || '').trim();
+            const amount = parseFloat(pin.amount) || 0;
+            const renderKey = [id, productCode, name, amount, index].join('::').toLowerCase();
+
+            return {
+              id,
+              product_code: productCode,
+              name,
+              amount,
+              description: pin.description || pin.type || selectedExam.toUpperCase(),
+              available: pin.available !== false && Number(pin.amount || 0) > 0,
+              renderKey,
+            };
+          })
+          .filter((pin: ExamPin) => {
+            if (seenKeys.has(pin.renderKey)) return false;
+            seenKeys.add(pin.renderKey);
+            return true;
+          });
+
+        if (mappedPins.length === 0) {
+          const examLabel = EXAM_TYPES.find((exam) => exam.id === selectedExam)?.name || selectedExam.toUpperCase();
+          setExamPins([
+            {
+              id: selectedExam,
+              product_code: selectedExam,
+              name: examLabel,
+              amount: 0,
+              description: `${examLabel} pin types are currently unavailable. Please check back later.`,
+              available: false,
+              renderKey: `${selectedExam}-unavailable`,
+            },
+          ]);
+          setSelectedPin(null);
+          return;
+        }
+        
+        setExamPins(mappedPins);
+        setSelectedPin(null);
       } else {
         showAlert('Error', 'Failed to load exam pins', 'error');
       }
@@ -97,21 +154,59 @@ const ExamPinsScreen: React.FC = () => {
       return;
     }
 
+    // Validate JAMB-specific fields
+    const isJamb = selectedExam.toLowerCase().includes('jamb') || selectedPin.id.toLowerCase().includes('jamb');
+    if (isJamb) {
+      if (!jambAccount.trim()) {
+        showAlert('Error', 'Please enter your JAMB registration number', 'error');
+        return;
+      }
+      if (!phone.trim()) {
+        showAlert('Error', 'Please enter your phone number', 'error');
+        return;
+      }
+      if (phone.trim().length < 10) {
+        showAlert('Error', 'Please enter a valid phone number', 'error');
+        return;
+      }
+    }
+
     const qty = parseInt(quantity);
     if (qty < 1 || qty > 10) {
       showAlert('Error', 'Quantity must be between 1 and 10', 'error');
       return;
     }
 
+    const totalCost = selectedPin.amount * qty;
+    if (walletBalance.balance < totalCost) {
+      showAlert(
+        'Insufficient Balance',
+        `You need ₦${totalCost.toLocaleString()} but your wallet has ₦${walletBalance.balance.toLocaleString()}. Please fund your wallet.`,
+        'error'
+      );
+      return;
+    }
+
     try {
       setLoading(true);
-      const response = await apiClient.post('/services/epins', {
+      const payload: any = {
         epin_type: selectedExam,
         product_code: selectedPin.product_code || selectedPin.id,
         quantity: qty,
-      });
+      };
+
+      // Add JAMB-specific fields if applicable
+      if (isJamb) {
+        payload.jamb_account = jambAccount.trim();
+        payload.phone = phone.trim();
+      }
+
+      const response = await apiClient.post('/services/epins', payload);
 
       if (response.success) {
+        await refreshBalance();
+        const purchaseData = (response as any).data || {};
+        const returnedPins = Array.isArray(purchaseData.pins) ? purchaseData.pins : [];
         showAlert('Success', 'Exam pins purchase successful!', 'success', [
           {
             text: 'View Receipt',
@@ -119,15 +214,16 @@ const ExamPinsScreen: React.FC = () => {
               navigation.navigate('Success', {
                 data: {
                   serviceType: 'exampins',
-                  amount: selectedPin.amount * qty,
+                  amount: purchaseData.amount || totalCost,
                   planName: `${selectedPin.name} (${qty} pin${qty > 1 ? 's' : ''})`,
                   provider: selectedExam.toUpperCase(),
                   quantity: qty,
-                  transactionId:
-                    (response as any).data?.transaction_id || (response as any).data?.reference || `TXN_${Date.now()}`,
-                  status: (response as any).data?.status || 'completed',
+                  transactionId: purchaseData.transaction_id || purchaseData.transaction_reference || `TXN_${Date.now()}`,
+                  status: purchaseData.status || 'completed',
                   timestamp: new Date().toISOString(),
-                  ...(response as any).data && { apiResponse: (response as any).data },
+                  pins: returnedPins,
+                  pinTitle: purchaseData.pin_title || selectedPin.name,
+                  apiResponse: purchaseData,
                 },
               }),
           },
@@ -138,11 +234,11 @@ const ExamPinsScreen: React.FC = () => {
           },
         ]);
       } else {
-        showAlert('Error', response.error || 'Purchase failed', 'error');
+        showAlert('Error', response.error || (response.data as any)?.error || 'Purchase failed', 'error');
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      showAlert('Error', 'Failed to complete purchase', 'error');
+      showAlert('Error', error instanceof Error ? error.message : 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
     }
@@ -188,7 +284,10 @@ const ExamPinsScreen: React.FC = () => {
                     borderColor: theme.border,
                   },
                 ]}
-                onPress={() => setSelectedExam(exam.id)}
+                onPress={() => {
+                  setSelectedExam(exam.id);
+                  setSelectedPin(null); // Reset pin selection when exam type changes
+                }}
               >
                 <Text
                   style={[
@@ -214,6 +313,49 @@ const ExamPinsScreen: React.FC = () => {
             ))}
           </View>
 
+          {/* JAMB Account Number - Conditional */}
+          {selectedExam.toLowerCase().includes('jamb') && (
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>
+                JAMB Registration Number <Text style={{ color: '#ff4444' }}>*</Text>
+              </Text>
+              <TextInput
+                style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+                placeholder="e.g., 12345678901"
+                placeholderTextColor={theme.textSecondary}
+                value={jambAccount}
+                onChangeText={setJambAccount}
+                keyboardType="numeric"
+                editable={!loading}
+              />
+              <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+                Your 11-digit JAMB registration number
+              </Text>
+            </View>
+          )}
+
+          {/* Phone Number - Conditional for JAMB */}
+          {selectedExam.toLowerCase().includes('jamb') && (
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>
+                Phone Number <Text style={{ color: '#ff4444' }}>*</Text>
+              </Text>
+              <TextInput
+                style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+                placeholder="e.g., 08012345678"
+                placeholderTextColor={theme.textSecondary}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                maxLength={11}
+                editable={!loading}
+              />
+              <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+                Your registered mobile number
+              </Text>
+            </View>
+          )}
+
           {/* Quantity */}
           <View style={styles.fieldContainer}>
             <Text style={[styles.fieldLabel, { color: theme.text }]}>Quantity</Text>
@@ -225,6 +367,7 @@ const ExamPinsScreen: React.FC = () => {
               onChangeText={setQuantity}
               keyboardType="numeric"
               maxLength={2}
+              editable={!loading}
             />
           </View>
 
@@ -247,46 +390,67 @@ const ExamPinsScreen: React.FC = () => {
                 >
                   {examPins.map((pin) => (
                     <TouchableOpacity
-                      key={pin.id}
+                      key={pin.renderKey}
                       style={[
                         styles.pinCard,
                         {
-                          backgroundColor: selectedPin?.id === pin.id ? theme.primary : theme.surface,
+                          backgroundColor: pin.available
+                            ? selectedPin?.id === pin.id
+                              ? theme.primary
+                              : theme.surface
+                            : theme.surfaceVariant,
                           borderColor: theme.border,
+                          opacity: pin.available ? 1 : 0.75,
                         },
                       ]}
-                      onPress={() => setSelectedPin(pin)}
+                      onPress={() => {
+                        if (!pin.available) {
+                          showAlert('Unavailable', `${pin.name} is currently unavailable. Please check back later.`, 'warning');
+                          return;
+                        }
+                        setSelectedPin(pin);
+                      }}
                     >
-                      <Text
-                        style={[
-                          styles.pinName,
-                          {
-                            color: selectedPin?.id === pin.id ? '#ffffff' : theme.text,
-                          },
-                        ]}
-                      >
-                        {pin.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.pinAmount,
-                          {
-                            color: selectedPin?.id === pin.id ? '#ffffff' : theme.primary,
-                          },
-                        ]}
-                      >
-                        ₦{pin.amount}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.pinDescription,
-                          {
-                            color: selectedPin?.id === pin.id ? 'rgba(255,255,255,0.8)' : theme.textSecondary,
-                          },
-                        ]}
-                      >
-                        {pin.description}
-                      </Text>
+                      {pin.available ? (
+                        <>
+                          <Text
+                            style={[
+                              styles.pinName,
+                              {
+                                color: selectedPin?.id === pin.id ? '#ffffff' : theme.text,
+                              },
+                            ]}
+                          >
+                            {pin.name}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.pinAmount,
+                              {
+                                color: selectedPin?.id === pin.id ? '#ffffff' : theme.primary,
+                              },
+                            ]}
+                          >
+                            ₦{pin.amount}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.pinDescription,
+                              {
+                                color: selectedPin?.id === pin.id ? 'rgba(255,255,255,0.8)' : theme.textSecondary,
+                              },
+                            ]}
+                          >
+                            {pin.description}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="time-outline" size={22} color={theme.textSecondary} />
+                          <Text style={[styles.pinName, { color: theme.text, marginTop: 8 }]}>Not currently available</Text>
+                          <Text style={[styles.pinDescription, { color: theme.textSecondary }]}>Check back later</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -299,10 +463,10 @@ const ExamPinsScreen: React.FC = () => {
             style={[
               styles.purchaseButton,
               { backgroundColor: theme.primary },
-              (!selectedExam || !selectedPin || !quantity || loading) && styles.disabledButton,
+              (!selectedExam || !selectedPin || !quantity || loading || (selectedExam.toLowerCase().includes('jamb') && (!jambAccount || !phone))) && styles.disabledButton,
             ]}
             onPress={handlePurchase}
-            disabled={!selectedExam || !selectedPin || !quantity || loading}
+            disabled={!selectedExam || !selectedPin || !quantity || loading || (selectedExam.toLowerCase().includes('jamb') && (!jambAccount || !phone))}
           >
             {loading ? (
               <Text style={styles.purchaseText}>Processing...</Text>
@@ -399,6 +563,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  helperText: {
+    fontSize: 12,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -451,3 +620,11 @@ const styles = StyleSheet.create({
 });
 
 export default ExamPinsScreen;
+
+// Map exam types to their corresponding pin IDs from Payscribe API
+const EXAM_PIN_MAPPING: { [key: string]: string[] } = {
+  jamb: ['de', 'utme_mock', 'utme'],
+  neco: ['neco'],
+  waec: ['waec'],
+  nabteb: ['nabteb'],
+};

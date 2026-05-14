@@ -1,5 +1,5 @@
-﻿// src/screens/dashboard/BettingScreen.tsx
-import React, { useState } from 'react';
+// src/screens/dashboard/BettingScreen.tsx
+import React, { useEffect, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Text,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,20 +15,34 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { apiClient } from '../../services/apiClient';
 import { useNavigation } from '@react-navigation/native';
 import CustomAlert from '../../components/CustomAlert';
+import { useWalletBalance } from '../../contexts/WalletBalanceContext';
 
-const BETTING_PROVIDERS = [
-  { id: 'bet9ja', name: 'Bet9ja', color: '#1E40AF' },
-  { id: 'sportybet', name: 'SportyBet', color: '#059669' },
-  { id: 'nairabet', name: 'NairaBet', color: '#DC2626' },
-  { id: 'merrybet', name: 'MerryBet', color: '#7C3AED' },
-];
+interface BettingProvider {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface BettingValidationResult {
+  account_name: string;
+  account_number: string;
+  bet_id: string;
+  customer_id: string;
+  description?: string;
+}
 
 const BettingScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
+  const { walletBalance, refreshBalance } = useWalletBalance();
+  const [providers, setProviders] = useState<BettingProvider[]>([]);
+  const [loadingProviders, setLoadingProviders] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
-  const [accountId, setAccountId] = useState('');
+  const [customerId, setCustomerId] = useState('');
   const [amount, setAmount] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [validationResult, setValidationResult] = useState<BettingValidationResult | null>(null);
+  const [validating, setValidating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -48,14 +63,109 @@ const BettingScreen: React.FC = () => {
 
   const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
-  const handlePurchase = async () => {
-    if (!selectedProvider || !accountId || !amount) {
-      showAlert('Error', 'Please fill in all fields', 'error');
+  useEffect(() => {
+    refreshBalance().catch(() => undefined);
+    fetchProviders();
+  }, []);
+
+  const fetchProviders = async () => {
+    try {
+      setLoadingProviders(true);
+      const response = await apiClient.get('/services/bundles/betting');
+      if (!response.success) {
+        showAlert('Error', response.error || 'Failed to load betting providers', 'error');
+        setProviders([]);
+        return;
+      }
+
+      const bundles = (response.data as any)?.data?.bundles || (response.data as any)?.bundles || [];
+      const normalizedProviders: BettingProvider[] = Array.isArray(bundles)
+        ? bundles
+            .filter((provider: any) => provider && (provider.id || provider.name))
+            .map((provider: any) => ({
+              id: String(provider.id || '').toLowerCase(),
+              name: String(provider.name || provider.title || 'Betting Provider'),
+              description: String(provider.description || ''),
+            }))
+        : [];
+
+      setProviders(normalizedProviders);
+      if (!selectedProvider && normalizedProviders.length > 0) {
+        setSelectedProvider(normalizedProviders[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch betting providers:', error);
+      showAlert('Error', 'Failed to load betting providers', 'error');
+      setProviders([]);
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
+
+  const handleValidateAccount = async () => {
+    if (!selectedProvider || !customerId) {
+      showAlert('Error', 'Select a provider and enter the customer ID first', 'error');
       return;
     }
 
-    if (parseFloat(amount) < 100) {
+    try {
+      setValidating(true);
+      setValidationResult(null);
+      setCustomerName('');
+
+      const response = await apiClient.get(`/services/betting/lookup?bet_id=${encodeURIComponent(selectedProvider)}&customer_id=${encodeURIComponent(customerId)}`);
+
+      if (!response.success) {
+        showAlert('Validation Failed', response.error || 'Unable to validate betting account', 'error');
+        return;
+      }
+
+      const data = response.data as any;
+      const validated: BettingValidationResult = {
+        account_name: String(data?.account_name || data?.message?.details?.name || ''),
+        account_number: String(data?.account_number || data?.customer_id || customerId),
+        bet_id: String(data?.bet_id || selectedProvider),
+        customer_id: String(data?.customer_id || customerId),
+        description: String(data?.description || 'Validation successful'),
+      };
+
+      setValidationResult(validated);
+      setCustomerName(validated.account_name);
+
+      setAmount('');
+
+      showAlert(
+        'Validation Successful',
+        `${validated.account_name || 'Customer'} has been verified for ${selectedProvider.toUpperCase()}.`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Validation error:', error);
+      showAlert('Validation Failed', 'Unable to validate the betting account', 'error');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handlePurchase = async () => {
+    if (!selectedProvider || !customerId || !amount || !validationResult) {
+      showAlert('Error', 'Please validate the betting account before funding', 'error');
+      return;
+    }
+
+    const amountValue = Number(amount);
+    if (!Number.isFinite(amountValue) || amountValue < 100) {
       showAlert('Error', 'Minimum amount is ₦100', 'error');
+      return;
+    }
+
+    const availableBalance = Number(walletBalance.balance || 0);
+    if (availableBalance < amountValue) {
+      showAlert(
+        'Insufficient Balance',
+        `You need ₦${amountValue.toLocaleString()} to fund this betting wallet, but your wallet balance is only ₦${availableBalance.toLocaleString()}. Please fund your wallet and try again.`,
+        'error'
+      );
       return;
     }
 
@@ -63,9 +173,9 @@ const BettingScreen: React.FC = () => {
       setLoading(true);
       const response = await apiClient.post('/services/betting', {
         betId: selectedProvider,
-        amount: parseFloat(amount),
-        customerId: accountId,
-        customerName: accountId, // Using accountId as customerName for now
+        amount: amountValue,
+        customerId,
+        customerName: customerName || validationResult.account_name || customerId,
       });
 
       if (response.success) {
@@ -76,10 +186,16 @@ const BettingScreen: React.FC = () => {
               navigation.navigate('Success', {
                 data: {
                   serviceType: 'betting',
-                  amount: parseFloat(amount),
-                  recipient: accountId,
+                  amount: amountValue,
+                  recipient: customerId,
                   provider: selectedProvider,
-                  transactionId: (response as any).transactionId || `TXN_${Date.now()}`,
+                  planName: validationResult.account_name,
+                  betId: selectedProvider,
+                  customerName: validationResult.account_name || customerName || customerId,
+                  transactionId: (response as any).data?.transaction_id || (response as any).data?.matrix_transaction_id || `TXN_${Date.now()}`,
+                  apiResponse: response.data,
+                  status: (response as any).data?.status || 'completed',
+                  timestamp: new Date().toISOString(),
                 },
               }),
           },
@@ -97,51 +213,50 @@ const BettingScreen: React.FC = () => {
       showAlert('Error', 'Failed to complete purchase', 'error');
     } finally {
       setLoading(false);
+      refreshBalance().catch(() => undefined);
     }
   };
 
   return (
-    
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }}>
-        {/* Header */}
-        <LinearGradient
-          colors={[theme.primary, theme.primary + 'DD']}
-          style={styles.header}
-        >
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-          <View style={styles.headerContent}>
-            <View style={[styles.iconContainer, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-              <Ionicons name="football" size={32} color="white" />
-            </View>
-            <Text style={styles.serviceTitle}>Betting & Gaming</Text>
-            <Text style={styles.serviceDescription}>
-              Fund your Bet9ja, SportyBet, NairaBet, MerryBet accounts
-            </Text>
+      <LinearGradient colors={[theme.primary, theme.primary + 'DD']} style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color="white" />
+        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <View style={[styles.iconContainer, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+            <Ionicons name="football" size={32} color="white" />
           </View>
-        </LinearGradient>
+          <Text style={styles.serviceTitle}>Betting & Gaming</Text>
+          <Text style={styles.serviceDescription}>Load the provider list, validate the betting account, then fund the wallet.</Text>
+        </View>
+      </LinearGradient>
 
-        {/* Form */}
-        <View style={styles.formContainer}>
-          <Text style={[styles.formTitle, { color: theme.text }]}>Select Provider</Text>
+      <View style={styles.formContainer}>
+        <Text style={[styles.formTitle, { color: theme.text }]}>Select Provider</Text>
 
-          {/* Provider Selection */}
+        {loadingProviders ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading providers...</Text>
+          </View>
+        ) : (
           <View style={styles.providerGrid}>
-            {BETTING_PROVIDERS.map((provider) => (
+            {providers.map((provider) => (
               <TouchableOpacity
                 key={provider.id}
                 style={[
                   styles.providerCard,
                   {
-                    backgroundColor: selectedProvider === provider.id ? provider.color : theme.surface,
+                    backgroundColor: selectedProvider === provider.id ? theme.primary : theme.surface,
                     borderColor: theme.border,
                   },
                 ]}
-                onPress={() => setSelectedProvider(provider.id)}
+                onPress={() => {
+                  setSelectedProvider(provider.id);
+                  setValidationResult(null);
+                  setCustomerName('');
+                }}
               >
                 <Text
                   style={[
@@ -156,57 +271,104 @@ const BettingScreen: React.FC = () => {
               </TouchableOpacity>
             ))}
           </View>
+        )}
 
-          {/* Account ID */}
-          <View style={styles.fieldContainer}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Account ID / Username</Text>
-            <TextInput
-              style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
-              placeholder="Enter account ID or username"
-              placeholderTextColor={theme.textSecondary}
-              value={accountId}
-              onChangeText={setAccountId}
-              autoCapitalize="none"
-            />
-          </View>
+        {/* Provider is selected from the list above. No free-text Bet ID input. */}
 
-          {/* Amount */}
-          <View style={styles.fieldContainer}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Amount (₦)</Text>
-            <TextInput
-              style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
-              placeholder="1000"
-              placeholderTextColor={theme.textSecondary}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="numeric"
-            />
-          </View>
-
-          {/* Info Box */}
-          <View style={[styles.infoBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Ionicons name="information-circle" size={20} color={theme.primary} />
-            <Text style={[styles.infoText, { color: theme.text }]}>
-              Make sure your account details are correct. Funds will be credited to your betting account instantly.
-            </Text>
-          </View>
-
-          {/* Purchase Button */}
-          <TouchableOpacity
-            style={[styles.purchaseButton, { backgroundColor: theme.primary }]}
-            onPress={handlePurchase}
-            disabled={loading}
-          >
-            {loading ? (
-              <Text style={styles.purchaseText}>Processing...</Text>
-            ) : (
-              <Text style={styles.purchaseText}>Fund Betting Account</Text>
-            )}
-          </TouchableOpacity>
+        <View style={styles.fieldContainer}>
+          <Text style={[styles.fieldLabel, { color: theme.text }]}>Customer ID</Text>
+          <TextInput
+            style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+            placeholder="Enter customer ID"
+            placeholderTextColor={theme.textSecondary}
+            value={customerId}
+            onChangeText={(text) => {
+              setCustomerId(text.trim());
+              setValidationResult(null);
+              setCustomerName('');
+            }}
+            autoCapitalize="none"
+          />
         </View>
-      <CustomAlert visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={closeAlert} />
-      </ScrollView>
-    );
+
+        <TouchableOpacity
+          style={[
+            styles.secondaryButton,
+            { borderColor: theme.primary },
+            (validating || !selectedProvider || !customerId) && styles.disabledButton,
+          ]}
+          onPress={handleValidateAccount}
+          disabled={validating || !selectedProvider || !customerId}
+        >
+          {validating ? (
+            <Text style={[styles.secondaryButtonText, { color: theme.primary }]}>Validating...</Text>
+          ) : (
+            <Text style={[styles.secondaryButtonText, { color: theme.primary }]}>Validate Account</Text>
+          )}
+        </TouchableOpacity>
+
+        {validationResult && (
+          <View style={[styles.infoBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="checkmark-circle" size={20} color={theme.primary} />
+            <View style={styles.validationTextContainer}>
+              <Text style={[styles.validationTitle, { color: theme.text }]}>Account validated</Text>
+              <Text style={[styles.infoText, { color: theme.text }]}>
+                {validationResult.account_name || 'Customer'} - {validationResult.account_number}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {validationResult && (
+          <>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>Amount (₦)</Text>
+              <TextInput
+                style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
+                placeholder="1000"
+                placeholderTextColor={theme.textSecondary}
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View style={[styles.infoBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons name="wallet" size={20} color={theme.primary} />
+              <Text style={[styles.infoText, { color: theme.text }]}>
+                Wallet balance: ₦{Number(walletBalance.balance || 0).toLocaleString()}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.purchaseButton,
+                { backgroundColor: theme.primary },
+                (!selectedProvider || !customerId || !amount || !validationResult || loading) && styles.disabledButton,
+              ]}
+              onPress={handlePurchase}
+              disabled={!selectedProvider || !customerId || !amount || !validationResult || loading}
+            >
+              {loading ? (
+                <Text style={styles.purchaseText}>Processing...</Text>
+              ) : (
+                <Text style={styles.purchaseText}>Fund Betting Wallet</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={closeAlert}
+      />
+    </ScrollView>
+  );
 };
 
 const styles = StyleSheet.create({
@@ -287,6 +449,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+  },
   infoBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -295,17 +465,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 20,
   },
+  validationTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  validationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
   infoText: {
     fontSize: 14,
     lineHeight: 20,
-    marginLeft: 12,
     flex: 1,
+  },
+  secondaryButton: {
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
   purchaseButton: {
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 20,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
   purchaseText: {
     color: '#ffffff',

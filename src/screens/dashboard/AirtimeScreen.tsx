@@ -1,5 +1,5 @@
 // src/screens/dashboard/AirtimeScreen.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -52,11 +52,19 @@ const normalizePhoneNumber = (number: string) => {
   return digitsOnly.slice(0, 11);
 };
 
-const AirtimeScreen: React.FC = () => {
+type AirtimeScreenProps = {
+  route?: {
+    params?: {
+      prefilledNumber?: string;
+    };
+  };
+};
+
+const AirtimeScreen: React.FC<AirtimeScreenProps> = ({ route }) => {
   const { theme } = useTheme();
   const navigation = useNavigation();
   const [selectedNetwork, setSelectedNetwork] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(route?.params?.prefilledNumber || '');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -77,6 +85,13 @@ const AirtimeScreen: React.FC = () => {
       onConfirm: onConfirm || (() => setAlertConfig(prev => ({ ...prev, visible: false }))),
     });
   }, []);
+
+  // Auto-detect network when prefilled number is provided
+  useEffect(() => {
+    if (route?.params?.prefilledNumber) {
+      detectNetwork(route.params.prefilledNumber);
+    }
+  }, [route?.params?.prefilledNumber]);
 
   const detectNetwork = (number: string) => {
     const cleanNumber = normalizePhoneNumber(number);

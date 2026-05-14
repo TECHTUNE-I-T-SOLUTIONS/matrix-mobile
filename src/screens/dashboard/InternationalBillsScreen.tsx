@@ -45,7 +45,13 @@ interface InternationalProduct {
   current_rate?: number;
 }
 
-const COUNTRIES = [
+interface InternationalCountry {
+  iso: string;
+  name: string;
+  icon?: string;
+}
+
+const DEFAULT_COUNTRIES: InternationalCountry[] = [
   { iso: 'NG', name: 'Nigeria', icon: 'flag' },
   { iso: 'GH', name: 'Ghana', icon: 'flag' },
   { iso: 'KE', name: 'Kenya', icon: 'flag' },
@@ -58,6 +64,7 @@ const InternationalBillsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
   const [iso, setIso] = useState('NG');
+  const [countries, setCountries] = useState<InternationalCountry[]>(DEFAULT_COUNTRIES);
   const [providers, setProviders] = useState<InternationalProvider[]>([]);
   const [products, setProducts] = useState<InternationalProduct[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<InternationalProvider | null>(null);
@@ -88,6 +95,10 @@ const InternationalBillsScreen: React.FC = () => {
   const closeAlert = () => setAlertConfig((c) => ({ ...c, visible: false }));
 
   useEffect(() => {
+    fetchCountries();
+  }, []);
+
+  useEffect(() => {
     fetchProviders();
   }, [iso]);
 
@@ -102,7 +113,7 @@ const InternationalBillsScreen: React.FC = () => {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (amount && selectedProvider) {
+      if (amount && selectedProduct?.sku) {
         fetchRate();
       } else {
         setEstimatedReceiveAmount(null);
@@ -110,7 +121,7 @@ const InternationalBillsScreen: React.FC = () => {
     }, 500);
 
     return () => clearTimeout(timeout);
-  }, [amount, iso, selectedProvider]);
+  }, [amount, iso, selectedProduct?.sku]);
 
   const normalizeArray = (data: any) => {
     if (Array.isArray(data)) return data;
@@ -143,6 +154,33 @@ const InternationalBillsScreen: React.FC = () => {
       showAlert('Error', 'Failed to load providers', 'error');
     } finally {
       setLoadingProviders(false);
+    }
+  };
+
+  const fetchCountries = async () => {
+    try {
+      const response = await apiClient.get('/services/international?action=countries');
+      if (!response.success) {
+        return;
+      }
+
+      const countryList = normalizeArray(response.data)
+        .map((item: any) => ({
+          iso: String(item.iso || '').toUpperCase(),
+          name: item.title || item.name || item.iso,
+          icon: 'flag',
+        }))
+        .filter((item: InternationalCountry) => item.iso);
+
+      if (countryList.length > 0) {
+        setCountries(countryList);
+        const currentIsoExists = countryList.some((country: InternationalCountry) => country.iso === iso);
+        if (!currentIsoExists) {
+          setIso(countryList[0].iso);
+        }
+      }
+    } catch (error) {
+      console.warn('Fetch countries error:', error);
     }
   };
 
@@ -188,14 +226,59 @@ const InternationalBillsScreen: React.FC = () => {
     }
   };
 
+  const validateAmountRange = (): string | null => {
+    if (!selectedProduct || !amount) return null
+    const amountNum = parseFloat(amount)
+    const minReceive = parseFloat(selectedProduct.min_receive || '0')
+    const maxReceive = parseFloat(selectedProduct.max_receive || '0')
+
+    if (minReceive > 0 && amountNum < minReceive) {
+      return `Amount must be at least ${minReceive} ${selectedProduct.receive_currency}`
+    }
+    if (maxReceive > 0 && amountNum > maxReceive) {
+      return `Amount cannot exceed ${maxReceive} ${selectedProduct.receive_currency}`
+    }
+    return null
+  };
+
   const fetchRate = async () => {
     try {
-      const response = await apiClient.get(`/services/international?action=rate&iso=${iso}&amount=${amount}`);
+      if (!selectedProduct?.sku) {
+        setEstimatedReceiveAmount(null);
+        return;
+      }
+
+      // Validate amount is within product range before calling API
+      const rangeError = validateAmountRange()
+      if (rangeError) {
+        showAlert('Invalid Amount', rangeError, 'error')
+        setEstimatedReceiveAmount(null)
+        return
+      }
+
+      const response = await apiClient.get(
+        `/services/international?action=rate&iso=${iso}&sku=${encodeURIComponent(selectedProduct.sku)}&amount=${amount}`
+      );
       if (response.success) {
-        const rateData = normalizeArray(response.data);
-        const firstItem = rateData[0] || response.data;
-        const receiveAmount = Number(firstItem?.receive_amount || firstItem?.details?.receive_amount || firstItem?.amount || 0);
-        setEstimatedReceiveAmount(receiveAmount || null);
+        const payload = (response.data as any) || {}
+
+        // If provider returned an explicit failure, show it
+        if (payload.status === false || payload._http_status >= 400) {
+          const errDesc = payload.description || JSON.stringify(payload.message || payload)
+          showAlert('Rate Error', `Failed to fetch rate: ${errDesc}`, 'error')
+          setEstimatedReceiveAmount(null)
+          return
+        }
+
+        const details = payload.message?.details || payload.details || payload
+
+        const receiveAmount = Number(
+          details?.receive_value ?? details?.receive_amount ?? details?.amount ?? 0
+        )
+        setEstimatedReceiveAmount(receiveAmount || null)
+      } else {
+        showAlert('Rate Error', response.error || 'Failed to fetch rate', 'error')
+        setEstimatedReceiveAmount(null)
       }
     } catch (error) {
       console.warn('Rate fetch failed:', error);
@@ -209,19 +292,23 @@ const InternationalBillsScreen: React.FC = () => {
       return;
     }
 
-    if (parseFloat(amount) < 1) {
-      showAlert('Error', 'Amount must be at least 1', 'error');
-      return;
+    // Validate amount is within product range
+    const rangeError = validateAmountRange()
+    if (rangeError) {
+      showAlert('Invalid Amount', rangeError, 'error')
+      return
     }
 
     try {
       setLoading(true);
+      // Send amount as recipient receives it (in their currency), matching docs
       const response = await apiClient.post('/services/international', {
         iso,
-        code: selectedProvider.code,
-        product_id: selectedProduct.id,
-        phone: recipientPhone,
-        amount: parseFloat(amount),
+        provider_code: selectedProvider.code,
+        sku: selectedProduct.sku || selectedProduct.id,
+        account: recipientPhone,
+        amount: amount,
+        // Do not force debit_currency; let Payscribe use its default or user preference
       });
 
       if (response.success) {
@@ -252,7 +339,17 @@ const InternationalBillsScreen: React.FC = () => {
           },
         ]);
       } else {
-        showAlert('Error', response.error || 'Purchase failed', 'error');
+        // If provider returned detailed response, extract useful fields
+        const provider = (response as any).provider_response || (response as any).data || null
+        let providerMsg = ''
+        if (provider) {
+          providerMsg = provider.description || provider.message?.details || JSON.stringify(provider)
+        }
+        const message = response.error
+          ? `${response.error}${providerMsg ? '\nProvider: ' + providerMsg : ''}`
+          : providerMsg || 'Purchase failed'
+
+        showAlert('Error', message, 'error')
       }
     } catch (error) {
       console.error('Purchase error:', error);
@@ -282,7 +379,7 @@ const InternationalBillsScreen: React.FC = () => {
       <View style={styles.formContainer}>
         <Text style={[styles.formTitle, { color: theme.text }]}>Select Country</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.countryScroll}>
-          {COUNTRIES.map((country) => (
+          {countries.map((country) => (
             <TouchableOpacity
               key={country.iso}
               style={[
@@ -379,17 +476,24 @@ const InternationalBillsScreen: React.FC = () => {
         </View>
 
         <View style={styles.fieldContainer}>
-          <Text style={[styles.fieldLabel, { color: theme.text }]}>Amount (₦)</Text>
+          <Text style={[styles.fieldLabel, { color: theme.text }]}>
+            Amount ({selectedProduct?.receive_currency || 'Amount'})
+          </Text>
           <TextInput
             style={[styles.textInput, { borderColor: theme.border, color: theme.text }]}
-            placeholder="1000"
+            placeholder={selectedProduct ? `${selectedProduct.min_receive}-${selectedProduct.max_receive}` : 'Enter amount'}
             placeholderTextColor={theme.textSecondary}
             value={amount}
             onChangeText={setAmount}
-            keyboardType="numeric"
+            keyboardType="decimal-pad"
           />
+          {selectedProduct && (
+            <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+              Valid range: {selectedProduct.min_receive} - {selectedProduct.max_receive} {selectedProduct.receive_currency}
+            </Text>
+          )}
           {estimatedReceiveAmount !== null && (
-            <Text style={[styles.helperText, { color: theme.textSecondary }]}>Estimated receive amount: {estimatedReceiveAmount}</Text>
+            <Text style={[styles.helperText, { color: theme.primary }]}>Estimated cost: {estimatedReceiveAmount} NGN</Text>
           )}
         </View>
 

@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
   Modal,
+  AppState,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -121,6 +122,10 @@ const DashboardScreen: React.FC = () => {
     icon: 'gift',
   });
   const promoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [clipboardModalVisible, setClipboardModalVisible] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState('');
+  const appState = useRef(AppState.currentState);
 
   const fetchDashboardData = async () => {
     try {
@@ -241,6 +246,58 @@ const DashboardScreen: React.FC = () => {
       }
     };
   }, []);
+
+  const checkClipboardForPhone = async () => {
+    try {
+      const hasString = await Clipboard.hasStringAsync();
+      if (hasString) {
+        const content = await Clipboard.getStringAsync();
+        const cleanNumber = content.replace(/[\s-()]/g, '');
+        const phoneRegex = /^(?:\+234|234|0)[789][01]\d{8}$/;
+
+        if (phoneRegex.test(cleanNumber)) {
+          const lastPrompted = await AsyncStorage.getItem('last_prompted_clipboard_phone');
+          if (lastPrompted !== cleanNumber) {
+            setCopiedPhone(cleanNumber);
+            setClipboardModalVisible(true);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Clipboard check error:', e);
+    }
+  };
+
+  useEffect(() => {
+    checkClipboardForPhone();
+
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        checkClipboardForPhone();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleClipboardAction = async (type: 'airtime' | 'data' | 'ignore') => {
+    setClipboardModalVisible(false);
+    if (copiedPhone) {
+      await AsyncStorage.setItem('last_prompted_clipboard_phone', copiedPhone);
+    }
+
+    if (type === 'airtime') {
+      navigation.navigate('Airtime', { prefilledNumber: copiedPhone });
+    } else if (type === 'data') {
+      navigation.navigate('Data', { prefilledNumber: copiedPhone });
+    }
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -679,6 +736,53 @@ const DashboardScreen: React.FC = () => {
         type={alert.type}
         onClose={() => setAlert({ ...alert, visible: false })}
       />
+
+      <Modal
+        visible={clipboardModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => handleClipboardAction('ignore')}
+      >
+        <View style={styles.promoModalBackdrop}>
+          <View style={[styles.promoModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.promoIconWrap, { backgroundColor: `${theme.primary}15` }]}>
+              <Ionicons name="call-outline" size={28} color={theme.primary} />
+            </View>
+            <Text style={[styles.promoTitle, { color: theme.text }]}>Phone Number Detected</Text>
+            <Text style={[styles.promoMessage, { color: theme.textSecondary }]}>
+              We noticed you copied a phone number: {copiedPhone}. Would you like to buy airtime or data for this number?
+            </Text>
+
+            <View style={styles.clipboardModalButtonsContainer}>
+              <TouchableOpacity
+                style={[styles.clipboardModalPrimaryBtn, { backgroundColor: theme.primary }]}
+                activeOpacity={0.8}
+                onPress={() => handleClipboardAction('airtime')}
+              >
+                <Ionicons name="phone-portrait-outline" size={18} color="white" style={{ marginRight: 8 }} />
+                <Text style={styles.clipboardModalPrimaryBtnText}>Buy Airtime</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.clipboardModalPrimaryBtn, { backgroundColor: '#00D084' }]}
+                activeOpacity={0.8}
+                onPress={() => handleClipboardAction('data')}
+              >
+                <Ionicons name="wifi-outline" size={18} color="white" style={{ marginRight: 8 }} />
+                <Text style={styles.clipboardModalPrimaryBtnText}>Buy Data</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.clipboardModalSecondaryBtn, { borderColor: theme.textSecondary, backgroundColor: theme.background }]}
+                activeOpacity={0.7}
+                onPress={() => handleClipboardAction('ignore')}
+              >
+                <Text style={[styles.clipboardModalSecondaryBtnText, { color: theme.textSecondary }]}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1196,6 +1300,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   promoSecondaryText: {
     fontSize: 14,
@@ -1204,13 +1309,51 @@ const styles = StyleSheet.create({
   promoPrimaryBtn: {
     flex: 1,
     borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   promoPrimaryText: {
     fontSize: 14,
     fontWeight: '800',
     color: 'white',
+  },
+  clipboardModalButtonsContainer: {
+    width: '100%',
+    marginTop: 28,
+    gap: 12,
+  },
+  clipboardModalPrimaryBtn: {
+    flexDirection: 'row',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+  },
+  clipboardModalPrimaryBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: 'white',
+    textAlign: 'center',
+  },
+  clipboardModalSecondaryBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clipboardModalSecondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

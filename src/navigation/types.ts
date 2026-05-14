@@ -32,7 +32,7 @@ export type RootStackParamList = {
   TermsOfService: undefined;
   PrivacyPolicy: undefined;
   PinSettings: undefined;
-  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; pin?: string; meterType?: string; quantity?: number; status?: string; apiResponse?: any; timestamp?: string } };
+  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; betId?: string; customerName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; pin?: string; serial?: string; meterType?: string; quantity?: number; status?: string; apiResponse?: any; timestamp?: string; pins?: Array<{ name?: string; pin?: string; serial?: string }>; pinTitle?: string } };
   Referrals: undefined;
   TransactionDetails: { transaction: any };
 };
@@ -83,7 +83,7 @@ export type DashboardStackParamList = {
   PrivacyPolicy: undefined;
   PinSettings: undefined;
   Referrals: undefined;
-  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; pin?: string; meterType?: string; quantity?: number; status?: string; timestamp?: string } };
+  Success: { data: { serviceType: string; amount: number; recipient?: string; planName?: string; betId?: string; customerName?: string; transactionId?: string; network?: string; provider?: string; meterNumber?: string; pin?: string; serial?: string; meterType?: string; quantity?: number; status?: string; timestamp?: string; apiResponse?: any; pins?: Array<{ name?: string; pin?: string; serial?: string }>; pinTitle?: string } };
   TransactionDetails: { transaction: any };
   Rewards: undefined;
   ReferralProgress: undefined;

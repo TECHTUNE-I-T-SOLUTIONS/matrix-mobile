@@ -1067,7 +1067,7 @@ const WalletScreen: React.FC = () => {
                     <Text style={[styles.accountName, { color: theme.text }]}>
                       {accountName || 'Account Name Not Available'}
                     </Text>
-                    <Text style={[styles.accountNumber, { color: theme.textSecondary }]}>
+                    <Text style={[styles.accountNumber, { color: theme.text }]}>
                       {accountNumber} • {selectedBank?.name}
                     </Text>
                   </View>
@@ -1115,6 +1115,10 @@ const WalletScreen: React.FC = () => {
                     return (
                   <View style={styles.confirmationCard}>
                     <Text style={[styles.confirmLabel, { color: theme.text }]}>Transfer Details</Text>
+                    <View style={styles.confirmRow}>
+                      <Text style={[styles.confirmText, { color: theme.textSecondary }]}>Recipient:</Text>
+                      <Text style={[styles.confirmValue, { color: theme.text }]}>{accountName}</Text>
+                    </View>
                     <View style={styles.confirmRow}>
                       <Text style={[styles.confirmText, { color: theme.textSecondary }]}>Amount:</Text>
                       <Text style={[styles.confirmValue, { color: theme.text }]}>₦{parseFloat(payoutAmount).toLocaleString()}</Text>

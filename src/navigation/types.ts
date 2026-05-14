@@ -26,7 +26,9 @@ export type RootStackParamList = {
   Notifications: undefined;
   Profile: undefined;
   Settings: undefined;
+  NetworkStatus: undefined;
   Support: undefined;
+  About: undefined;
   TermsOfService: undefined;
   PrivacyPolicy: undefined;
   PinSettings: undefined;
@@ -74,7 +76,9 @@ export type DashboardStackParamList = {
   Notifications: undefined;
   Profile: undefined;
   Settings: undefined;
+  NetworkStatus: undefined;
   Support: undefined;
+  About: undefined;
   TermsOfService: undefined;
   PrivacyPolicy: undefined;
   PinSettings: undefined;

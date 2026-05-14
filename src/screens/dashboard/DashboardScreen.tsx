@@ -11,10 +11,12 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSession } from '../../contexts/SessionContext';
 import { useNavigation } from '@react-navigation/native';
@@ -28,6 +30,8 @@ import { SkeletonLoader } from '../../components/SkeletonLoader';
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 48) / 2;
 const vaCardWidth = width * 0.75;
+const DASHBOARD_PROMO_KEY = 'matrix_dashboard_promo_seen_at';
+const DASHBOARD_PROMO_COOLDOWN = 1000 * 60 * 60 * 24 * 3;
 
 interface VirtualAccount {
   id: string;
@@ -102,6 +106,21 @@ const DashboardScreen: React.FC = () => {
     message: '',
     type: 'info',
   });
+  const [promo, setPromo] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    cta: string;
+    route?: 'Rewards' | 'Referrals';
+    icon: 'gift' | 'people';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    cta: '',
+    icon: 'gift',
+  });
+  const promoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchDashboardData = async () => {
     try {
@@ -183,6 +202,45 @@ const DashboardScreen: React.FC = () => {
     }
     fetchDashboardData();
   }, [session.user]);
+
+  useEffect(() => {
+    const maybeShowPromo = async () => {
+      try {
+        const lastSeenRaw = await AsyncStorage.getItem(DASHBOARD_PROMO_KEY);
+        const lastSeen = lastSeenRaw ? Number(lastSeenRaw) : 0;
+        if (lastSeen && Date.now() - lastSeen < DASHBOARD_PROMO_COOLDOWN) return;
+        if (Math.random() > 0.4) return;
+
+        if (promoTimerRef.current) {
+          clearTimeout(promoTimerRef.current);
+        }
+
+        promoTimerRef.current = setTimeout(async () => {
+          const isSpinPromo = Math.random() < 0.5;
+          setPromo({
+            visible: true,
+            title: isSpinPromo ? 'Spin and Earn' : 'Invite and Grow',
+            message: isSpinPromo
+              ? 'Your spin wheel can unlock surprise rewards. Tap Rewards to check your daily spin and see what you can win today.'
+              : 'Your referral code can help you grow your balance through active invites. Tap Referrals to share your code and follow your progress.',
+            cta: isSpinPromo ? 'Open Rewards' : 'Open Referrals',
+            route: isSpinPromo ? 'Rewards' : 'Referrals',
+            icon: isSpinPromo ? 'gift' : 'people',
+          });
+          await AsyncStorage.setItem(DASHBOARD_PROMO_KEY, String(Date.now()));
+        }, 4500);
+      } catch {
+        // silent
+      }
+    };
+
+    maybeShowPromo();
+    return () => {
+      if (promoTimerRef.current) {
+        clearTimeout(promoTimerRef.current);
+      }
+    };
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -571,6 +629,48 @@ const DashboardScreen: React.FC = () => {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={promo.visible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setPromo((current) => ({ ...current, visible: false }))}
+      >
+        <View style={styles.promoModalBackdrop}>
+          <View style={[styles.promoModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.promoIconWrap, { backgroundColor: `${theme.primary}15` }]}>
+              <Ionicons
+                name={promo.icon === 'gift' ? 'gift-outline' : 'people-outline'}
+                size={28}
+                color={theme.primary}
+              />
+            </View>
+            <Text style={[styles.promoTitle, { color: theme.text }]}>{promo.title}</Text>
+            <Text style={[styles.promoMessage, { color: theme.textSecondary }]}>{promo.message}</Text>
+            <View style={styles.promoActions}>
+              <TouchableOpacity
+                style={[styles.promoSecondaryBtn, { borderColor: theme.border }]}
+                activeOpacity={0.85}
+                onPress={() => setPromo((current) => ({ ...current, visible: false }))}
+              >
+                <Text style={[styles.promoSecondaryText, { color: theme.textSecondary }]}>Not now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.promoPrimaryBtn, { backgroundColor: theme.primary }]}
+                activeOpacity={0.9}
+                onPress={() => {
+                  const nextRoute = promo.route;
+                  setPromo((current) => ({ ...current, visible: false }));
+                  if (nextRoute) navigation.navigate(nextRoute);
+                }}
+              >
+                <Text style={styles.promoPrimaryText}>{promo.cta}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <CustomAlert
         visible={alert.visible}
@@ -1049,6 +1149,68 @@ const styles = StyleSheet.create({
   notificationDate: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  promoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  promoModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 22,
+    alignItems: 'center',
+  },
+  promoIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  promoTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  promoMessage: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 22,
+  },
+  promoActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  promoSecondaryBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  promoSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  promoPrimaryBtn: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  promoPrimaryText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: 'white',
   },
 });
 

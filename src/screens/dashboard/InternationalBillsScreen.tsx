@@ -29,6 +29,20 @@ interface InternationalProduct {
   receive_amount?: number;
   currency?: string;
   description?: string;
+  sku?: string;
+  uat?: string;
+  country_iso?: string;
+  provider_code?: string;
+  display_text?: string;
+  min_send?: string;
+  max_send?: string;
+  min_receive?: string;
+  max_receive?: string;
+  receive_currency?: string;
+  send_currency?: string;
+  lookup_required?: string;
+  vend_type?: string;
+  current_rate?: number;
 }
 
 const COUNTRIES = [
@@ -139,12 +153,26 @@ const InternationalBillsScreen: React.FC = () => {
       const response = await apiClient.get(`/services/international?action=products&iso=${iso}&code=${providerCode}`);
       if (response.success) {
         const productList = normalizeArray(response.data).map((item: any) => ({
-          id: item.id || item.product_id || item.code,
-          name: item.name || item.product_name || item.title,
+          id: item.sku || item.id || item.product_id || item.code || `${providerCode}-${item.display_text || item.name || Math.random().toString(36).slice(2)}`,
+          name: item.display_text || item.name || item.product_name || item.title || item.sku || item.code,
           amount: Number(item.amount || item.price || item.send_amount || 0),
           receive_amount: Number(item.receive_amount || 0),
-          currency: item.currency,
-          description: item.description,
+          currency: item.currency || item.receive_currency || item.send_currency,
+          description: item.description || item.display_text,
+          sku: item.sku || item.id || item.code,
+          uat: item.uat,
+          country_iso: item.country_iso || iso,
+          provider_code: item.provider_code || providerCode,
+          display_text: item.display_text || "",
+          min_send: String(item.min_send || ""),
+          max_send: String(item.max_send || ""),
+          min_receive: String(item.min_receive || ""),
+          max_receive: String(item.max_receive || ""),
+          receive_currency: item.receive_currency || "",
+          send_currency: item.send_currency || "USD",
+          lookup_required: String(item.lookup_required || "0"),
+          vend_type: item.vend_type || "range",
+          current_rate: Number(item.current_rate || 0),
         }));
         setProducts(productList);
         setSelectedProduct(productList[0] || null);
@@ -316,16 +344,22 @@ const InternationalBillsScreen: React.FC = () => {
                   styles.productCard,
                   {
                     backgroundColor: selectedProduct?.id === product.id ? theme.primary : theme.surface,
-                    borderColor: theme.border,
+                    borderColor: selectedProduct?.id === product.id ? theme.primary : theme.border,
                   },
                 ]}
                 onPress={() => setSelectedProduct(product)}
               >
                 <Text style={[styles.productName, { color: selectedProduct?.id === product.id ? '#ffffff' : theme.text }]}>
-                  {product.name}
+                  {product.display_text || product.name}
                 </Text>
                 <Text style={[styles.productAmount, { color: selectedProduct?.id === product.id ? '#ffffff' : theme.primary }]}>
-                  ₦{Number(product.amount || 0).toLocaleString()}
+                  {product.receive_currency ? `${product.receive_currency} ` : ''}{product.min_receive}{product.min_receive !== product.max_receive ? ` - ${product.max_receive}` : ''}
+                </Text>
+                <Text style={[styles.productMeta, { color: selectedProduct?.id === product.id ? 'rgba(255,255,255,0.85)' : theme.textSecondary }]}>
+                  {product.vend_type ? `${product.vend_type.toUpperCase()} package` : 'International product'}
+                </Text>
+                <Text style={[styles.productMeta, { color: selectedProduct?.id === product.id ? 'rgba(255,255,255,0.85)' : theme.textSecondary }]}>
+                  {product.current_rate ? `1 USD = ${Number(product.current_rate).toLocaleString()} ${product.receive_currency || ''}` : ''}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -480,9 +514,10 @@ const styles = StyleSheet.create({
     minWidth: '45%',
     paddingVertical: 16,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
+    marginBottom: 12,
   },
   productName: {
     fontSize: 15,
@@ -493,6 +528,11 @@ const styles = StyleSheet.create({
   productAmount: {
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  productMeta: {
+    fontSize: 11,
+    marginTop: 4,
+    textAlign: 'center',
   },
   fieldContainer: {
     marginBottom: 20,

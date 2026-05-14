@@ -24,7 +24,9 @@ import TransactionsScreen from './TransactionsScreen';
 import NotificationsScreen from './NotificationsScreen';
 import ProfileScreen from './ProfileScreen';
 import SettingsScreen from './SettingsScreen';
+import NetworkStatusScreen from './NetworkStatusScreen';
 import SupportScreen from './SupportScreen';
+import AboutScreen from './AboutScreen';
 import TermsOfServiceScreen from './TermsOfServiceScreen';
 import PrivacyPolicyScreen from './PrivacyPolicyScreen';
 import PinSettingsScreen from './PinSettingsScreen';
@@ -74,7 +76,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ route }) => {
           <DashboardStack.Screen name="Notifications" component={NotificationsScreen} />
           <DashboardStack.Screen name="Profile" component={ProfileScreen} />
           <DashboardStack.Screen name="Settings" component={SettingsScreen} />
+          <DashboardStack.Screen name="NetworkStatus" component={NetworkStatusScreen} />
           <DashboardStack.Screen name="Support" component={SupportScreen} />
+          <DashboardStack.Screen name="About" component={AboutScreen} />
           <DashboardStack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
           <DashboardStack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
           <DashboardStack.Screen name="PinSettings" component={PinSettingsScreen} />

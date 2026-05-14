@@ -34,6 +34,24 @@ const NETWORK_PREFIXES: { [key: string]: string } = {
   '0809': '9mobile', '0817': '9mobile', '0818': '9mobile', '0909': '9mobile', '0908': '9mobile',
 };
 
+const normalizePhoneNumber = (number: string) => {
+  const digitsOnly = String(number || '').replace(/\D/g, '');
+
+  if (digitsOnly.startsWith('234') && digitsOnly.length > 3) {
+    return `0${digitsOnly.slice(3)}`;
+  }
+
+  if (digitsOnly.startsWith('0')) {
+    return digitsOnly.slice(0, 11);
+  }
+
+  if (digitsOnly.length === 10) {
+    return `0${digitsOnly}`;
+  }
+
+  return digitsOnly.slice(0, 11);
+};
+
 const AirtimeScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -61,12 +79,7 @@ const AirtimeScreen: React.FC = () => {
   }, []);
 
   const detectNetwork = (number: string) => {
-    let cleanNumber = number.replace(/\s/g, '');
-    if (cleanNumber.startsWith('+234')) {
-      cleanNumber = '0' + cleanNumber.slice(4);
-    } else if (cleanNumber.startsWith('234')) {
-      cleanNumber = '0' + cleanNumber.slice(3);
-    }
+    const cleanNumber = normalizePhoneNumber(number);
 
     if (cleanNumber.length >= 4) {
       const prefix = cleanNumber.substring(0, 4);

@@ -52,80 +52,11 @@ const AirtimeToWalletScreen: React.FC = () => {
   const closeAlert = () => setAlertConfig((current) => ({ ...current, visible: false }));
 
   const lookupRoute = async () => {
-    try {
-      setLoading(true);
-      const response = await apiClient.post('/services/airtime-to-wallet/lookup', {});
-      if (response.success) {
-        setLookupData((response.data as any)?.data || response.data || {});
-        showAlert('Lookup complete', 'Payscribe returned the current airtime-to-wallet lookup successfully.', 'success');
-      } else {
-        showAlert('Error', response.error || 'Lookup failed', 'error');
-      }
-    } catch {
-      showAlert('Error', 'Failed to load airtime-to-wallet lookup', 'error');
-    } finally {
-      setLoading(false);
-    }
+    showAlert('Coming Soon', 'Airtime to Wallet is still being finalized on our side. We are working on it and will enable it again once we finish setting up the endpoint.', 'warning');
   };
 
   const sendAirtime = async () => {
-    if (!selectedNetwork || !phoneNumber || !fromNumber || !amount) {
-      showAlert('Error', 'Please complete all fields', 'error');
-      return;
-    }
-
-    if (parseFloat(amount) < 1000) {
-      showAlert('Error', 'Minimum amount is ₦1,000', 'error');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await apiClient.post('/services/airtime-to-wallet/send', {
-        network: selectedNetwork,
-        phone_number: phoneNumber,
-        from: fromNumber,
-        amount: parseFloat(amount),
-      });
-
-      const responseData = (response.data as any)?.data || response.data;
-
-      if (response.success) {
-        showAlert(
-          'Success',
-          'Airtime-to-wallet request submitted successfully.',
-          'success',
-          [
-            {
-              text: 'View Receipt',
-              onPress: () => navigation.navigate('Success', {
-                data: {
-                  serviceType: 'airtime_to_wallet',
-                  amount: parseFloat(amount),
-                  recipient: phoneNumber,
-                  network: selectedNetwork,
-                  transactionId: responseData?.trans_id || responseData?.transaction_id || `ATW_${Date.now()}`,
-                  status: responseData?.status || 'processing',
-                  timestamp: new Date().toISOString(),
-                  ...(responseData && { apiResponse: responseData }),
-                },
-              })
-            },
-            {
-              text: 'Done',
-              onPress: () => navigation.goBack(),
-              style: 'cancel'
-            }
-          ]
-        );
-      } else {
-        showAlert('Error', response.error || 'Failed to send airtime', 'error');
-      }
-    } catch {
-      showAlert('Error', 'Failed to send airtime', 'error');
-    } finally {
-      setLoading(false);
-    }
+    showAlert('Coming Soon', 'Airtime to Wallet is still being finalized on our side. We are working on it and will enable it again once we finish setting up the endpoint.', 'warning');
   };
 
   return (
@@ -166,7 +97,7 @@ const AirtimeToWalletScreen: React.FC = () => {
           ))}
         </View>
 
-        <Text style={[styles.label, { color: theme.text }]}>Payscribe Wallet Number</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Matrix Wallet Number</Text>
         <TextInput style={[styles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surface }]} value={phoneNumber} onChangeText={setPhoneNumber} placeholder="070..." placeholderTextColor={theme.textSecondary} keyboardType="phone-pad" />
 
         <Text style={[styles.label, { color: theme.text }]}>Your Sending Number</Text>

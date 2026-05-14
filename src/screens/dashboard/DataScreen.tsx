@@ -26,6 +26,7 @@ interface DataPlan {
   name: string;
   amount: number;
   category: string;
+  id?: string;
   alias?: string;
   discount?: number;
   discount_type?: string;
@@ -49,9 +50,64 @@ const NETWORK_PREFIXES: { [key: string]: string } = {
   '0809': '9mobile', '0817': '9mobile', '0818': '9mobile', '0909': '9mobile', '0908': '9mobile',
 };
 
+const normalizePhoneNumber = (number: string) => {
+  const digitsOnly = String(number || '').replace(/\D/g, '');
+
+  if (digitsOnly.startsWith('234') && digitsOnly.length > 3) {
+    return `0${digitsOnly.slice(3)}`;
+  }
+
+  if (digitsOnly.startsWith('0')) {
+    return digitsOnly.slice(0, 11);
+  }
+
+  if (digitsOnly.length === 10) {
+    return `0${digitsOnly}`;
+  }
+
+  return digitsOnly.slice(0, 11);
+};
+
 const UNAVAILABLE_PLANS = ['PSPLAN_316', 'PSPLAN_318'];
 
 const { width } = Dimensions.get('window');
+
+const normalizeDataPlan = (plan: any, network: string, index: number): DataPlan => {
+  const name = String(plan?.name || plan?.title || plan?.description || `Plan ${index + 1}`);
+  const planCode = String(plan?.plan_code || plan?.id || plan?.code || `${network}-${index}`);
+  const amount = Number(plan?.amount ?? plan?.price ?? 0);
+  const category = String(plan?.category || plan?.group || plan?.duration || 'Other');
+
+  return {
+    id: String(plan?.id || planCode),
+    plan_code: planCode,
+    name,
+    amount: Number.isFinite(amount) ? amount : 0,
+    category,
+    alias: plan?.alias ? String(plan.alias) : undefined,
+    discount: Number.isFinite(Number(plan?.discount)) ? Number(plan.discount) : undefined,
+    discount_type: plan?.discount_type ? String(plan.discount_type) : undefined,
+  };
+};
+
+const flattenDataPlans = (input: any, network: string): DataPlan[] => {
+  const groups = Array.isArray(input) ? input : [];
+  return groups.flatMap((group: any, groupIndex: number) => {
+    const nestedPlans = Array.isArray(group?.plans) ? group.plans : [];
+    return nestedPlans
+      .filter((plan: any) => plan && (plan.name || plan.title || plan.plan_code || plan.id || plan.code))
+      .map((plan: any, planIndex: number) =>
+        normalizeDataPlan(
+          {
+            ...plan,
+            category: plan.category || group.category || group.title || 'Other',
+          },
+          network,
+          groupIndex * 1000 + planIndex
+        )
+      );
+  });
+};
 
 // Memoized Plan Card for performance
 const PlanCard = React.memo(({ 
@@ -93,7 +149,7 @@ const PlanCard = React.memo(({
         { color: isSelected ? '#ffffff' : '#10B981' },
       ]}
     >
-      ₦{plan.amount.toLocaleString()}
+      ₦{Number(plan.amount || 0).toLocaleString()}
     </Text>
   </TouchableOpacity>
 ));
@@ -130,12 +186,7 @@ const DataScreen: React.FC = () => {
   }, []);
 
   const detectNetwork = (number: string) => {
-    let cleanNumber = number.replace(/\s/g, '');
-    if (cleanNumber.startsWith('+234')) {
-      cleanNumber = '0' + cleanNumber.slice(4);
-    } else if (cleanNumber.startsWith('234')) {
-      cleanNumber = '0' + cleanNumber.slice(3);
-    }
+    const cleanNumber = normalizePhoneNumber(number);
 
     if (cleanNumber.length >= 4) {
       const prefix = cleanNumber.substring(0, 4);
@@ -160,16 +211,21 @@ const DataScreen: React.FC = () => {
       if (response.success) {
         let plans: DataPlan[] = [];
         const data = response.data as any;
-        if (Array.isArray(data)) plans = data;
-        else if (data?.data && Array.isArray(data.data)) plans = data.data;
-        else if (data?.message?.details?.[0]?.plans) plans = data.message.details[0].plans;
+        const rawPlans =
+          Array.isArray(data) ? data :
+          Array.isArray(data?.data) ? data.data :
+          Array.isArray(data?.message?.details?.[0]?.plans) ? data.message.details[0].plans :
+          [];
+
+        plans = flattenDataPlans(rawPlans, selectedNetwork);
 
         setDataPlans(plans);
         setSelectedCategory('');
         setSelectedPlan(null);
         setCurrentPage(1);
       } else {
-        if (response.error?.toLowerCase().includes('fetch') || response.error?.toLowerCase().includes('network')) {
+        const errorText = String(response.error || '').toLowerCase();
+        if (errorText.includes('fetch') || errorText.includes('network')) {
           showAlert('No Internet', 'Please check your internet connection and try again.', 'error');
         } else {
           showAlert('Error', response.error || 'Failed to load plans', 'error');
@@ -192,8 +248,8 @@ const DataScreen: React.FC = () => {
   const groupedPlans = useMemo(() => {
     return dataPlans.reduce((acc: GroupedPlans, plan) => {
       let category = 'Other';
-      const name = plan.name.toLowerCase();
-      const planCategory = plan.category.toLowerCase();
+      const name = String(plan.name || '').toLowerCase();
+      const planCategory = String(plan.category || '').toLowerCase();
 
       if (name.includes('-gifting')) category = 'Gifting';
       else if (name.includes('-awoof')) category = 'Awoof';
@@ -355,7 +411,7 @@ const DataScreen: React.FC = () => {
               <View style={styles.plansGrid}>
                 {categoryPlans.map((p) => (
                   <PlanCard 
-                    key={p.plan_code}
+                    key={p.id || p.plan_code || `${selectedNetwork}-${activeCategory}-${currentPage}-${p.name}`}
                     plan={p}
                     isSelected={selectedPlan?.plan_code === p.plan_code}
                     onPress={() => handleSelectPlan(p)}

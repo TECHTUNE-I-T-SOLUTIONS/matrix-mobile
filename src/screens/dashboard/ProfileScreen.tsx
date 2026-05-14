@@ -606,6 +606,70 @@ const ProfileScreen: React.FC = () => {
                         borderColor: theme.border,
                       },
                     ]}
+                    onPress={() => navigation.navigate('About')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons
+                        name="information-circle"
+                        size={20}
+                        color={theme.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.menuText,
+                          { color: theme.text },
+                        ]}
+                      >
+                        About Matrix
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    onPress={() => navigation.navigate('NetworkStatus')}
+                  >
+                    <View style={styles.menuContent}>
+                      <Ionicons
+                        name="pulse"
+                        size={20}
+                        color={theme.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.menuText,
+                          { color: theme.text },
+                        ]}
+                      >
+                        Network Status
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                      },
+                    ]}
                     onPress={() => navigation.navigate('Support')}
                   >
                     <View style={styles.menuContent}>
